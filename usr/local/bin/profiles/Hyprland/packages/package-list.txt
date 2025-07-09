@@ -1,0 +1,35 @@
+# Hyprland Profile Packages
+# Essential system packages
+base-devel
+networkmanager
+
+# Hyprland and Wayland
+hyprland
+xorg-xwayland
+
+# Audio
+pipewire
+pipewire-alsa
+pipewire-jack
+pipewire-pulse
+wireplumber
+
+# Screenshot and clipboard
+grim
+slurp
+wl-clipboard
+
+# Background and lock
+swaybg
+swayidle
+swaylock-effects
+
+# Media control
+playerctl
+
+# Display manager
+sddm
+sddm-hyprland-theme
+
+# Terminal
+kitty

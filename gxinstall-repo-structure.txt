@@ -1,0 +1,29 @@
+gxinstall-repo/
+├── VERSION
+├── README.md
+├── gxinstall-repo-structure.txt
+├── tmp/
+│   └── installer.sh
+└── usr/
+    └── local/
+        └── bin/
+            ├── gxinstall
+            ├── gx_disk.py
+            ├── Installer/
+            │   ├── install_gaming.sh
+            │   ├── install_hacking.sh
+            │   └── install_hyprland.sh
+            └── profiles/
+                ├── Gaming/
+                │   ├── install.sh
+                │   └── packages/
+                │       └── package-list.txt
+                ├── Hacking/
+                │   ├── install.sh
+                │   └── packages/
+                │       └── package-list.txt
+                └── Hyprland/
+                    ├── install.sh
+                    ├── verify_paths.sh
+                    └── packages/
+                        └── package-list.txt
