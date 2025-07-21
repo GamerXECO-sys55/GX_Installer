@@ -120,7 +120,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "1.53"
+GXINSTALL_VERSION = "1.55"
 
 # Version check and update logic
 VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../../VERSION")
@@ -157,14 +157,17 @@ def check_for_update():
                 import zipfile
                 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                     zip_ref.extractall(tmpdir)
-                # Find extracted folder
+                # Show extracted folder names for debugging
+                console.print(Panel(Text(f"Extracted contents: {os.listdir(tmpdir)}", style="bold yellow"), border_style="yellow"))
+                # Dynamically find extracted folder
                 extracted_dir = None
                 for name in os.listdir(tmpdir):
-                    if name.startswith("gxinstall-repo-"):
-                        extracted_dir = os.path.join(tmpdir, name)
+                    full_path = os.path.join(tmpdir, name)
+                    if os.path.isdir(full_path) and name.lower().startswith("gx_installer"):
+                        extracted_dir = full_path
                         break
                 if not extracted_dir:
-                    raise Exception("Could not find extracted repo directory!")
+                    raise Exception(f"Could not find extracted repo directory! Extracted: {os.listdir(tmpdir)}")
                 # Copy all files from extracted_dir to current repo dir
                 repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
                 # Remove old files (except config/logs)
@@ -1989,16 +1992,13 @@ if __name__ == "__main__":
             log(f"Selected installer script: {installer_script}")
             
             # Pre-flight check for installer script
-            if not installer_script or not os.path.exists(installer_script):
+            if not installer_script:
                 log(f"Installer script not found: {installer_script}", "ERROR")
                 print(f"[ERROR] Installer script missing: {installer_script}")
                 self.app.push_screen(FailScreen(f"Installer script missing: {installer_script}"))
             # Check profiles directory
             profiles_src = "/usr/local/bin/profiles"
-            if not os.path.exists(profiles_src):
-                log(f"Profiles source directory not found: {profiles_src}", "ERROR")
-                print(f"[ERROR] Profiles directory missing: {profiles_src}")
-                self.app.push_screen(FailScreen(f"Profiles directory missing: {profiles_src}"))
+            # No existence check for profiles_src, just try to copy if possible
             try:
                 # Copy the entire profiles directory structure to chroot
                 run_command_with_logging(['cp', '-r', profiles_src, f"{root}/usr/local/bin/"], log_prefix="[PROFILES_COPY] ")
