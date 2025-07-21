@@ -120,7 +120,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "1.62"
+GXINSTALL_VERSION = "1.63"
 
 # Version check and update logic
 VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../../VERSION")
@@ -202,8 +202,8 @@ def check_for_update():
                         shutil.copytree(src, dst, dirs_exist_ok=True)
                     else:
                         shutil.copy2(src, dst)
-            console.print(Panel(Text("Update Successful! Please re-run the installer.", style="bold green on black"), border_style="bold green"))
-            sys.exit(0)
+                console.print(Panel(Text("Update Successful! Please re-run the installer.", style="bold green on black"), border_style="bold green"))
+                sys.exit(0)
         except Exception as e:
             console.print(Panel(Text(f"[ERROR] Update failed: {e}", style="bold red"), border_style="red"))
             sys.exit(1)
