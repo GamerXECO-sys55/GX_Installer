@@ -78,7 +78,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 1.02
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 1.50
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -111,30 +111,82 @@ PROFILE_OPTIONS = [
 # Add a configuration dictionary to store user selections
 CONFIG = {}
 
-GXINSTALL_VERSION = "1.02"
+GXINSTALL_VERSION = "1.50"
 
 # Version check and update logic
 VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../../VERSION")
 def check_for_update():
+    import urllib.request
+    import shutil
+    import tempfile
+    import subprocess
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.text import Text
+    console = Console()
+    GITHUB_VERSION_URL = "https://raw.githubusercontent.com/GamerXECO-sys55/gxinstall-repo/main/VERSION"
+    GITHUB_REPO_URL = "https://github.com/GamerXECO-sys55/gxinstall-repo/archive/refs/heads/main.zip"
     try:
-        with open(VERSION_FILE) as vf:
-            repo_version = vf.read().strip()
-        if repo_version > GXINSTALL_VERSION:
-            from rich.console import Console
-            from rich.panel import Panel
-            from rich.text import Text
-            console = Console()
-            msg = Text(f"New Version {repo_version} is Available!", style="bold magenta on yellow")
-            msg2 = Text(f"Updating to {repo_version}...", style="bold cyan on black")
-            console.print(Panel(msg, border_style="bold green", title="[bold red]UPDATE"))
-            console.print(Panel(msg2, border_style="bold blue"))
-            # Simulate update (your real update logic goes here)
-            import time
-            time.sleep(2)
-            console.print(Panel(Text("Update Successful!", style="bold green on black"), border_style="bold green"))
-            # Optionally, exit or reload
+        # Fetch remote version
+        with urllib.request.urlopen(GITHUB_VERSION_URL, timeout=5) as response:
+            remote_version = response.read().decode().strip()
     except Exception as e:
-        pass
+        console.print(Panel(Text(f"[WARNING] Could not check for updates: {e}", style="bold yellow"), border_style="yellow"))
+        return
+    if remote_version > GXINSTALL_VERSION:
+        msg = Text(f"New Version {remote_version} is Available!", style="bold magenta on yellow")
+        msg2 = Text(f"Updating to {remote_version}...", style="bold cyan on black")
+        console.print(Panel(msg, border_style="bold green", title="[bold red]UPDATE"))
+        console.print(Panel(msg2, border_style="bold blue"))
+        # Download and extract new files
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                zip_path = os.path.join(tmpdir, "gxinstall-repo.zip")
+                with urllib.request.urlopen(GITHUB_REPO_URL, timeout=30) as response, open(zip_path, "wb") as out_file:
+                    shutil.copyfileobj(response, out_file)
+                # Extract zip
+                import zipfile
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(tmpdir)
+                # Find extracted folder
+                extracted_dir = None
+                for name in os.listdir(tmpdir):
+                    if name.startswith("gxinstall-repo-"):
+                        extracted_dir = os.path.join(tmpdir, name)
+                        break
+                if not extracted_dir:
+                    raise Exception("Could not find extracted repo directory!")
+                # Copy all files from extracted_dir to current repo dir
+                repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+                # Remove old files (except config/logs)
+                for fname in os.listdir(repo_root):
+                    if fname in ["/tmp", "gxinstall_logs"]:
+                        continue
+                    fpath = os.path.join(repo_root, fname)
+                    try:
+                        if os.path.isdir(fpath):
+                            shutil.rmtree(fpath)
+                        else:
+                            os.remove(fpath)
+                    except Exception as e:
+                        pass  # Ignore errors for now
+                # Copy new files
+                for fname in os.listdir(extracted_dir):
+                    src = os.path.join(extracted_dir, fname)
+                    dst = os.path.join(repo_root, fname)
+                    if os.path.isdir(src):
+                        shutil.copytree(src, dst, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(src, dst)
+            console.print(Panel(Text("Update Successful! Please re-run the installer.", style="bold green on black"), border_style="bold green"))
+            sys.exit(0)
+        except Exception as e:
+            console.print(Panel(Text(f"[ERROR] Update failed: {e}", style="bold red"), border_style="red"))
+            sys.exit(1)
+    else:
+        # No update needed
+        return
+
 
 check_for_update()
 
@@ -206,14 +258,20 @@ def get_timezones():
     return sorted(zones)
 
 def call_disk_backend(args):
+    """Call the gx_disk.py backend and return parsed JSON output"""
+    import subprocess
+    import sys
+    import json
+    gx_disk_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gx_disk.py")
     try:
-        result = subprocess.run(["/usr/local/bin/gx_disk.py"] + args, capture_output=True, text=True)
-        if not result.stdout.strip():
+        result = subprocess.run([sys.executable, gx_disk_path] + args, capture_output=True, text=True)
+        output = result.stdout.strip()
+        if not output:
             return {"status": "error", "message": "Disk backend error: No output returned."}
         try:
-            return json.loads(result.stdout)
+            return json.loads(output)
         except json.JSONDecodeError:
-            return {"status": "error", "message": f"Disk backend error: Invalid JSON response: {result.stdout}"}
+            return {"status": "error", "message": f"Disk backend error: Invalid JSON response: {output}"}
     except Exception as e:
         return {"status": "error", "message": f"Disk backend error: {e}"}
 
@@ -404,10 +462,24 @@ class MainMenu(Static):
                     ("KERNEL", "Kernels"),
                     ("TIMEZONE", "Timezone"),
                 ]
+                missing_fields = []
                 for key, label in required_fields:
                     if key not in CONFIG or not CONFIG[key]:
-                        app.push_screen(InfoScreen("Missing Option", "❌", f"Please select option '{label}'"))
-                        return
+                        missing_fields.append(label)
+                if missing_fields:
+                    app.push_screen(InfoScreen("Missing Option", "❌", f"Please select: {', '.join(missing_fields)}"))
+                    return
+                # Extra validation for some fields
+                username_pattern = r'^[a-z_][a-z0-9_-]{0,31}$'
+                if not re.match(username_pattern, CONFIG['USER']):
+                    app.push_screen(InfoScreen("Invalid Username", "❌", "Username must be lowercase, start with a letter, and only use -, _."))
+                    return
+                if len(CONFIG['USER_PASS']) < 6:
+                    app.push_screen(InfoScreen("Weak Password", "❌", "Password must be at least 6 characters."))
+                    return
+                if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', CONFIG['HOSTNAME']):
+                    app.push_screen(InfoScreen("Invalid Hostname", "❌", "Invalid hostname (letters, numbers, '-', '_', max 63 chars)."))
+                    return
                 app.push_screen(InstallScreen())
             elif title == "Disk":
                 app.push_screen(PreMountedScreen())
@@ -510,8 +582,23 @@ class UserScreen(Screen):
             password = self.query_one("#password").value
             password2 = self.query_one("#password2").value
             sudo = self.query_one("#sudo").value
-            if not username or not password or password != password2:
-                self.app.push_screen(InfoScreen("User Error", "❌", "Passwords do not match or fields are empty."))
+            import re
+            # Username validation
+            username_pattern = r'^[a-z_][a-z0-9_-]{0,31}$'
+            if not username:
+                self.app.push_screen(InfoScreen("User Error", "❌", "Username cannot be empty."))
+                return
+            if not re.match(username_pattern, username):
+                self.app.push_screen(InfoScreen("User Error", "❌", "Invalid username. Use only lowercase letters, numbers, -, _."))
+                return
+            if not password:
+                self.app.push_screen(InfoScreen("User Error", "❌", "Password cannot be empty."))
+                return
+            if len(password) < 6:
+                self.app.push_screen(InfoScreen("User Error", "❌", "Password must be at least 6 characters."))
+                return
+            if password != password2:
+                self.app.push_screen(InfoScreen("User Error", "❌", "Passwords do not match."))
                 return
             CONFIG['USER'] = username
             CONFIG['USER_PASS'] = password
@@ -537,12 +624,16 @@ class HostnameScreen(Screen):
         self.query_one("#hostname").focus()
 
     def on_button_pressed(self, event):
+        import re
         if event.button.id == "back_btn":
             self.app.pop_screen()
         elif event.button.id == "save_btn":
             hostname = self.query_one("#hostname").value
             if not hostname:
                 self.app.push_screen(InfoScreen("Hostname Error", "❌", "Hostname cannot be empty."))
+                return
+            if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', hostname):
+                self.app.push_screen(InfoScreen("Hostname Error", "❌", "Invalid hostname (letters, numbers, '-', '_', max 63 chars)."))
                 return
             CONFIG['HOSTNAME'] = hostname
             self.app.pop_screen()
@@ -1265,11 +1356,15 @@ class FailScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Vertical(
             Static(Panel.fit(Text(f"Installation failed:\n{self.error_msg}", style="bold red"), title="[bold red]Install Failed", border_style="bold red")),
+            Center(Button("Retry", id="retry_btn")),
             Center(Button("Exit", id="exit_btn"))
         )
     def on_button_pressed(self, event):
         if event.button.id == "exit_btn":
             self.app.exit()
+        elif event.button.id == "retry_btn":
+            self.app.pop_screen()
+            # Optionally, reload last config or go to main menu
 
 class InstallScreen(Screen):
     def compose(self) -> ComposeResult:
@@ -1882,28 +1977,31 @@ if __name__ == "__main__":
                 installer_script = "/usr/local/bin/Installer/install_hacking.sh"
             log(f"Selected installer script: {installer_script}")
             
-            if installer_script and os.path.exists(installer_script):
-                try:
-                    # Copy the entire profiles directory structure to chroot
-                    profiles_src = "/usr/local/bin/profiles"
-                    profiles_dst = f"{root}/usr/local/bin/profiles"
-                    log(f"Copying profiles directory from {profiles_src} to chroot")
-                    if os.path.exists(profiles_src):
-                        run_command_with_logging(['cp', '-r', profiles_src, f"{root}/usr/local/bin/"], log_prefix="[PROFILES_COPY] ")
-                        log("Profiles directory copied to chroot successfully")
-                    else:
-                        log(f"Profiles source directory not found: {profiles_src}", "ERROR")
-                    
-                    # Copy the installer script
-                    log(f"Copying installer script to chroot")
-                    run_command_with_logging(['cp', installer_script, f"{root}/tmp/installer.sh"], log_prefix="[INSTALLER_COPY] ")
-                    run_command_with_logging(['chmod', '+x', f"{root}/tmp/installer.sh"], log_prefix="[INSTALLER_CHMOD] ")
-                    run_command_with_logging(['arch-chroot', root, '/tmp/installer.sh'], log_prefix="[PROFILE_INSTALL] ")
-                    log(f"Profile installer completed successfully: {profile}")
-                except Exception as e:
-                    log(f"Profile installer failed: {e}", "ERROR")
-            else:
+            # Pre-flight check for installer script
+            if not installer_script or not os.path.exists(installer_script):
                 log(f"Installer script not found: {installer_script}", "ERROR")
+                print(f"[ERROR] Installer script missing: {installer_script}")
+                self.app.push_screen(FailScreen(f"Installer script missing: {installer_script}"))
+            # Check profiles directory
+            profiles_src = "/usr/local/bin/profiles"
+            if not os.path.exists(profiles_src):
+                log(f"Profiles source directory not found: {profiles_src}", "ERROR")
+                print(f"[ERROR] Profiles directory missing: {profiles_src}")
+                self.app.push_screen(FailScreen(f"Profiles directory missing: {profiles_src}"))
+            try:
+                # Copy the entire profiles directory structure to chroot
+                run_command_with_logging(['cp', '-r', profiles_src, f"{root}/usr/local/bin/"], log_prefix="[PROFILES_COPY] ")
+                log("Profiles directory copied to chroot successfully")
+                # Copy the installer script
+                log(f"Copying installer script to chroot")
+                run_command_with_logging(['cp', installer_script, f"{root}/tmp/installer.sh"], log_prefix="[INSTALLER_COPY] ")
+                run_command_with_logging(['chmod', '+x', f"{root}/tmp/installer.sh"], log_prefix="[INSTALLER_CHMOD] ")
+                run_command_with_logging(['arch-chroot', root, '/tmp/installer.sh'], log_prefix="[PROFILE_INSTALL] ")
+                log(f"Profile installer completed successfully: {profile}")
+            except Exception as e:
+                log(f"Profile installer failed: {e}", "ERROR")
+                print(f"[ERROR] Profile install failed: {e}")
+                self.app.push_screen(FailScreen(f"Profile install failed: {e}"))
             
             log("Installation process completed")
             log(f"Log file location: {log_file}")

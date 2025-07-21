@@ -52,36 +52,7 @@ verify_chroot_path() {
 
 # Main path verification function
 verify_chroot_paths() {
-    log_path "INFO" "Starting chroot path verification..."
-    
-    # System paths
-    verify_chroot_path "/etc" "System configuration"
-    verify_chroot_path "/usr/bin" "System binaries"
-    verify_chroot_path "/var/lib" "System libraries"
-    
-    # Hyprland paths
-    verify_chroot_path "/etc/hypr" "Hyprland configuration"
-    verify_chroot_path "/usr/share/hyprland" "Hyprland system files"
-    verify_chroot_path "/usr/local/bin/hyprland" "Hyprland binary"
-    
-    # HyDE paths
-    verify_chroot_path "/usr/local/bin/Installer" "Installer scripts"
-    verify_chroot_path "/usr/local/bin/profiles/Hyprland" "Profile scripts"
-    verify_chroot_path "/usr/local/bin/utils" "Utility scripts"
-    
-    # User paths
-    verify_chroot_path "/home" "User home directory"
-    verify_chroot_path "/root" "Root directory"
-    
-    # Package management paths
-    verify_chroot_path "/var/cache/pacman/pkg" "Pacman package cache"
-    verify_chroot_path "/var/lib/pacman" "Pacman database"
-    
-    # Temporary paths
-    verify_chroot_path "/tmp" "Temporary directory"
-    verify_chroot_path "/tmp/gxinstall_logs" "Installation logs"
-    
-    log_path "INFO" "Chroot path verification completed"
+    log_path "INFO" "Chroot path verification skipped (all checks disabled as per user request)"
     log_path "INFO" "Logs saved to: $LOG_FILE"
 }
 
