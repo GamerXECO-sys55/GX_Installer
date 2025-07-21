@@ -120,7 +120,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "1.55"
+GXINSTALL_VERSION = "1.57"
 
 # Version check and update logic
 VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../../VERSION")
@@ -163,7 +163,7 @@ def check_for_update():
                 extracted_dir = None
                 for name in os.listdir(tmpdir):
                     full_path = os.path.join(tmpdir, name)
-                    if os.path.isdir(full_path) and name.lower().startswith("gx_installer"):
+                    if os.path.isdir(full_path) and name.endswith("-main"):
                         extracted_dir = full_path
                         break
                 if not extracted_dir:
