@@ -120,7 +120,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "1.60"
+GXINSTALL_VERSION = "1.62"
 
 # Version check and update logic
 VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../../VERSION")
@@ -160,18 +160,26 @@ def check_for_update():
                 # Show extracted folder names for debugging
                 console.print(Panel(Text(f"Extracted contents: {os.listdir(tmpdir)}", style="bold yellow"), border_style="yellow"))
                 # Dynamically find extracted folder
+                import fnmatch
                 extracted_dir = None
-                extracted_folders = [os.path.join(tmpdir, name) for name in os.listdir(tmpdir) if os.path.isdir(os.path.join(tmpdir, name))]
-                for folder in extracted_folders:
-                    if folder.endswith("-main"):
-                        extracted_dir = folder
+                found_dirs = []
+                for rootdir, dirs, files in os.walk(tmpdir):
+                    for d in dirs:
+                        full_path = os.path.join(rootdir, d)
+                        found_dirs.append(full_path)
+                        # Look for VERSION file in this directory
+                        if os.path.isfile(os.path.join(full_path, "VERSION")):
+                            extracted_dir = full_path
+                            break
+                    if extracted_dir:
                         break
-                if not extracted_dir and extracted_folders:
-                    # Fallback: just use the first folder found
-                    extracted_dir = extracted_folders[0]
+                console.print(Panel(Text(f"[DEBUG] All found directories: {found_dirs}", style="bold yellow"), border_style="yellow"))
+                if not extracted_dir and found_dirs:
+                    # Fallback: just use the first directory found
+                    extracted_dir = found_dirs[0]
                     console.print(Panel(Text(f"[WARNING] Using fallback extracted folder: {extracted_dir}", style="bold yellow"), border_style="yellow"))
                 if not extracted_dir:
-                    raise Exception(f"Could not find extracted repo directory! Extracted: {os.listdir(tmpdir)}")
+                    raise Exception(f"Could not find extracted repo directory! Found dirs: {found_dirs}")
                 # Copy all files from extracted_dir to current repo dir
                 repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
                 # Remove old files (except config/logs)
