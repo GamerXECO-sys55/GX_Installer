@@ -133,8 +133,8 @@ def check_for_update():
     from rich.panel import Panel
     from rich.text import Text
     console = Console()
-    GITHUB_VERSION_URL = "https://raw.githubusercontent.com/GamerXECO-sys55/gxinstall-repo/main/VERSION"
-    GITHUB_REPO_URL = "https://github.com/GamerXECO-sys55/gxinstall-repo/archive/refs/heads/main.zip"
+    GITHUB_VERSION_URL = "https://raw.githubusercontent.com/GamerXECO-sys55/GX_Installer/main/VERSION"
+    GITHUB_REPO_URL = "https://github.com/GamerXECO-sys55/GX_Installer/archive/refs/heads/main.zip"
     try:
         # Fetch remote version
         with urllib.request.urlopen(GITHUB_VERSION_URL, timeout=5) as response:
