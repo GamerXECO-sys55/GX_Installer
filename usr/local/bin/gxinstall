@@ -161,11 +161,15 @@ def check_for_update():
                 console.print(Panel(Text(f"Extracted contents: {os.listdir(tmpdir)}", style="bold yellow"), border_style="yellow"))
                 # Dynamically find extracted folder
                 extracted_dir = None
-                for name in os.listdir(tmpdir):
-                    full_path = os.path.join(tmpdir, name)
-                    if os.path.isdir(full_path) and name.endswith("-main"):
-                        extracted_dir = full_path
+                extracted_folders = [os.path.join(tmpdir, name) for name in os.listdir(tmpdir) if os.path.isdir(os.path.join(tmpdir, name))]
+                for folder in extracted_folders:
+                    if folder.endswith("-main"):
+                        extracted_dir = folder
                         break
+                if not extracted_dir and extracted_folders:
+                    # Fallback: just use the first folder found
+                    extracted_dir = extracted_folders[0]
+                    console.print(Panel(Text(f"[WARNING] Using fallback extracted folder: {extracted_dir}", style="bold yellow"), border_style="yellow"))
                 if not extracted_dir:
                     raise Exception(f"Could not find extracted repo directory! Extracted: {os.listdir(tmpdir)}")
                 # Copy all files from extracted_dir to current repo dir
