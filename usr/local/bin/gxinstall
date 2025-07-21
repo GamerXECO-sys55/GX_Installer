@@ -110,6 +110,15 @@ PROFILE_OPTIONS = [
 
 # Add a configuration dictionary to store user selections
 CONFIG = {}
+# Load saved config if present
+import os
+import json
+if os.path.exists('/tmp/gxinstall.conf'):
+    try:
+        with open('/tmp/gxinstall.conf', 'r') as f:
+            CONFIG.update(json.load(f))
+    except Exception:
+        pass
 
 GXINSTALL_VERSION = "1.50"
 
@@ -346,13 +355,14 @@ class LocaleScreen(Screen):
             self.app.pop_screen()
 
 class InfoScreen(Screen):
-    def __init__(self, title, icon, message, main_menu=False, delay=3):
+    def __init__(self, title, icon, message, main_menu=False, delay=3, back_screen=None):
         super().__init__()
         self.title = title
         self.icon = icon
         self.message = message
         self.main_menu = main_menu
         self.delay = delay
+        self.back_screen = back_screen
 
     async def on_mount(self):
         self.mount(Center(
@@ -362,14 +372,15 @@ class InfoScreen(Screen):
                     title=f"[bold magenta]{self.title}",
                     border_style="bold magenta"
                 )
-            )
+            ),
+            Center(Button("Back", id="back_btn"))
         ))
         if self.main_menu:
             await asyncio.sleep(self.delay)
             self.app.pop_screen()
 
     def on_button_pressed(self, event):
-        if event.button.id == "confirm_btn":
+        if event.button.id == "back_btn":
             self.app.pop_screen()
 
 class ProfileScreen(Screen):
@@ -467,18 +478,18 @@ class MainMenu(Static):
                     if key not in CONFIG or not CONFIG[key]:
                         missing_fields.append(label)
                 if missing_fields:
-                    app.push_screen(InfoScreen("Missing Option", "❌", f"Please select: {', '.join(missing_fields)}"))
+                    app.push_screen(InfoScreen("Missing Option", "❌", f"Please select: {', '.join(missing_fields)}", back_screen=MainMenu()))
                     return
                 # Extra validation for some fields
                 username_pattern = r'^[a-z_][a-z0-9_-]{0,31}$'
                 if not re.match(username_pattern, CONFIG['USER']):
-                    app.push_screen(InfoScreen("Invalid Username", "❌", "Username must be lowercase, start with a letter, and only use -, _."))
+                    app.push_screen(InfoScreen("Invalid Username", "❌", "Username must be lowercase, start with a letter, and only use -, _.", back_screen=UserScreen()))
                     return
                 if len(CONFIG['USER_PASS']) < 6:
-                    app.push_screen(InfoScreen("Weak Password", "❌", "Password must be at least 6 characters."))
+                    app.push_screen(InfoScreen("Weak Password", "❌", "Password must be at least 6 characters.", back_screen=UserScreen()))
                     return
                 if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', CONFIG['HOSTNAME']):
-                    app.push_screen(InfoScreen("Invalid Hostname", "❌", "Invalid hostname (letters, numbers, '-', '_', max 63 chars)."))
+                    app.push_screen(InfoScreen("Invalid Hostname", "❌", "Invalid hostname (letters, numbers, '-', '_', max 63 chars).", back_screen=MainMenu()))
                     return
                 app.push_screen(InstallScreen())
             elif title == "Disk":
@@ -586,19 +597,19 @@ class UserScreen(Screen):
             # Username validation
             username_pattern = r'^[a-z_][a-z0-9_-]{0,31}$'
             if not username:
-                self.app.push_screen(InfoScreen("User Error", "❌", "Username cannot be empty."))
+                self.app.push_screen(InfoScreen("User Error", "❌", "Username cannot be empty.", back_screen=UserScreen()))
                 return
             if not re.match(username_pattern, username):
-                self.app.push_screen(InfoScreen("User Error", "❌", "Invalid username. Use only lowercase letters, numbers, -, _."))
+                self.app.push_screen(InfoScreen("User Error", "❌", "Invalid username. Use only lowercase letters, numbers, -, _.", back_screen=UserScreen()))
                 return
             if not password:
-                self.app.push_screen(InfoScreen("User Error", "❌", "Password cannot be empty."))
+                self.app.push_screen(InfoScreen("User Error", "❌", "Password cannot be empty.", back_screen=UserScreen()))
                 return
             if len(password) < 6:
-                self.app.push_screen(InfoScreen("User Error", "❌", "Password must be at least 6 characters."))
+                self.app.push_screen(InfoScreen("User Error", "❌", "Password must be at least 6 characters.", back_screen=UserScreen()))
                 return
             if password != password2:
-                self.app.push_screen(InfoScreen("User Error", "❌", "Passwords do not match."))
+                self.app.push_screen(InfoScreen("User Error", "❌", "Passwords do not match.", back_screen=UserScreen()))
                 return
             CONFIG['USER'] = username
             CONFIG['USER_PASS'] = password
@@ -781,11 +792,11 @@ class SaveScreen(Screen):
                     border_style="bold magenta"
                 )
             ),
-            Center(Button("Confirm", id="confirm_btn"))
+            Center(Button("Back", id="back_btn"))
         )
 
     def on_button_pressed(self, event):
-        if event.button.id == "confirm_btn":
+        if event.button.id == "back_btn":
             self.app.pop_screen()
 
 class InstallLogScreen(Screen):
