@@ -10,6 +10,7 @@ import datetime
 import shutil
 import stat
 from pathlib import Path
+import tempfile
 
 # Check for required packages
 try:
@@ -120,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "1.63"
+GXINSTALL_VERSION = "1.71"
 
 # Version check and update logic
 VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../../VERSION")
@@ -149,10 +150,10 @@ def check_for_update():
         console.print(Panel(msg2, border_style="bold blue"))
         # Download and extract new files
         try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                zip_path = os.path.join(tmpdir, "gxinstall-repo.zip")
-                with urllib.request.urlopen(GITHUB_REPO_URL, timeout=30) as response, open(zip_path, "wb") as out_file:
-                    shutil.copyfileobj(response, out_file)
+            tmpdir = tempfile.mkdtemp()
+            zip_path = os.path.join(tmpdir, "gxinstall-repo.zip")
+            with urllib.request.urlopen(GITHUB_REPO_URL, timeout=30) as response, open(zip_path, "wb") as out_file:
+                shutil.copyfileobj(response, out_file)
                 # Extract zip
                 import zipfile
                 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -180,8 +181,19 @@ def check_for_update():
                     console.print(Panel(Text(f"[WARNING] Using fallback extracted folder: {extracted_dir}", style="bold yellow"), border_style="yellow"))
                 if not extracted_dir:
                     raise Exception(f"Could not find extracted repo directory! Found dirs: {found_dirs}")
+
                 # Make extracted_dir world-readable for the helper
                 import stat
+                
+                # Check if we need to go into usr/local/bin
+                bin_path = os.path.join(extracted_dir, "usr", "local", "bin")
+                if os.path.isdir(bin_path):
+                    console.print(Panel(Text(f"[DEBUG] Found usr/local/bin directory at: {bin_path}", style="bold yellow"), border_style="yellow"))
+                    extracted_dir = bin_path
+                else:
+                    console.print(Panel(Text(f"[WARNING] usr/local/bin not found in {extracted_dir}, using top-level", style="bold yellow"), border_style="yellow"))
+                
+                # Make everything readable
                 for root, dirs, files in os.walk(extracted_dir):
                     os.chmod(root, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
                     for d in dirs:
@@ -190,11 +202,43 @@ def check_for_update():
                         os.chmod(os.path.join(root, f), stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
 
                 # Use update helper script to perform the update after this process exits
-                repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+                # Set repo_root to the directory containing this gxinstall script
+                repo_root = os.path.dirname(os.path.abspath(__file__))
                 helper_path = "/usr/local/bin/gxupdate_helper.py"
+                
+                # Debug: Print the directories being used
+                console.print(Panel(Text(
+                    f"[DEBUG] Using directories:\n"
+                    f"- Extracted dir: {extracted_dir}\n"
+                    f"- Repo root: {repo_root}\n"
+                    f"- Helper path: {helper_path}",
+                    style="bold yellow"
+                ), border_style="yellow"))
+                
+                # Verify the helper script exists and is executable
+                if not os.path.isfile(helper_path):
+                    raise FileNotFoundError(f"Helper script not found at {helper_path}")
+                if not os.access(helper_path, os.X_OK):
+                    os.chmod(helper_path, 0o755)  # Make it executable if it's not
+                
+                # Start the helper script
                 import subprocess
-                subprocess.Popen(["python3", helper_path, extracted_dir, repo_root, sys.argv[0]])
-                console.print(Panel(Text("Update downloaded. The installer will now exit so the update can be applied. Please re-run the installer in a few seconds!", style="bold green on black"), border_style="bold green"))
+                subprocess.Popen([
+                    "python3", 
+                    helper_path, 
+                    extracted_dir, 
+                    repo_root, 
+                    sys.argv[0]  # Path to the current script
+                ])
+                
+                console.print(Panel(
+                    Text(
+                        "Update downloaded. The installer will now exit so the update can be applied.\n"
+                        "Please re-run the installer in a few seconds!",
+                        style="bold green on black"
+                    ),
+                    border_style="bold green"
+                ))
                 sys.exit(0)
         except Exception as e:
             console.print(Panel(Text(f"[ERROR] Update failed: {e}", style="bold red"), border_style="red"))
