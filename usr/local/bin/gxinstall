@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "1.77"
+GXINSTALL_VERSION = "1.79"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -1444,14 +1444,16 @@ class InstallScreen(Screen):
     def on_mount(self):
         self.query_one("#confirm_install_btn").focus()
 
-    def on_button_pressed(self, event):
+    async def on_button_pressed(self, event):
         if event.button.id == "confirm_install_btn":
             # Save config to a temp file for the installer
             with open("/tmp/gxinstall.conf", "w") as f:
                 json.dump(CONFIG, f, indent=2)
             # Switch to the InstallLogScreen and start install
-            self.app.push_screen(InstallLogScreen(CONFIG))
-            self.app.screen.call_later(self.app.screen.start_install)
+            install_screen = InstallLogScreen(CONFIG)
+            self.app.push_screen(install_screen)
+            # Start the installation process
+            await install_screen.start_install()
         elif event.button.id == "back_btn":
             self.app.pop_screen()
 
