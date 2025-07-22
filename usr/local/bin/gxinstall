@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "1.81"
+GXINSTALL_VERSION = "1.83"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -940,11 +940,18 @@ class InstallLogScreen(Screen):
             self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
         except Exception as e:
             self.error_msg = str(e)
-            self.log_lines.append(f"[ERROR] Installation failed: {e}\n")
+            error_msg = f"[ERROR] Installation failed: {e}\n"
+            self.log_lines.append(error_msg)
             self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
             self.install_done = True
             await asyncio.sleep(1)
-            self.app.push_screen(FailScreen(self.error_msg))
+            
+            # Safely handle the case where self.app might be None
+            if hasattr(self, 'app') and self.app is not None:
+                self.app.push_screen(FailScreen(self.error_msg))
+            else:
+                # If we can't push to the app, at least print the error
+                print(error_msg, file=sys.stderr)
             return
         # Step 3: Chroot and run post-install steps
         self.log_lines.append("[INFO] Entering chroot for configuration...\n")
