@@ -121,10 +121,11 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "1.71"
+GXINSTALL_VERSION = "1.77"
 
 # Version check and update logic
-VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../../VERSION")
+# In archiso, the VERSION file is in the same directory as gxinstall
+VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
 def check_for_update():
     import urllib.request
     import shutil
@@ -909,14 +910,9 @@ class InstallLogScreen(Screen):
         self.log_lines.append(f"[INFO] Installing base system and packages: {' '.join(pkgs)}\n")
         self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
         try:
-            # Try to install all packages, but skip missing ones
+            # Try to install all packages, skipping any that fail
             failed_pkgs = []
             for pkg in pkgs:
-                proc = await create_subprocess_exec('pacman', '-Si', pkg, stdout=PIPE, stderr=PIPE)
-                await proc.wait()
-                if proc.returncode != 0:
-                    self.log_lines.append(f"[WARNING] Package not found: {pkg}, skipping.\n")
-                    continue
                 proc = await create_subprocess_exec('pacstrap', root, pkg, stdout=PIPE, stderr=PIPE)
                 # Read and update logs in real time
                 while True:
@@ -929,6 +925,7 @@ class InstallLogScreen(Screen):
                     await self.refresh()  # Force TUI refresh for real-time logs
                 await proc.wait()
                 if proc.returncode != 0:
+                    self.log_lines.append(f"[WARNING] Failed to install package: {pkg}, skipping.\n")
                     failed_pkgs.append(pkg)
             if failed_pkgs:
                 self.log_lines.append(f"[WARNING] Some packages failed to install: {' '.join(failed_pkgs)}\n")
@@ -1549,10 +1546,9 @@ def run_gx_install():
     failed_pkgs = []
     for pkg in pkgs:
         try:
-            subprocess.run(['pacman', '-Si', pkg], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             subprocess.run(['pacstrap', root, pkg], check=True)
         except subprocess.CalledProcessError:
-            print(f"[WARNING] Package not found or failed to install: {pkg}, skipping.")
+            print(f"[WARNING] Failed to install package: {pkg}, skipping.")
             failed_pkgs.append(pkg)
     if failed_pkgs:
         print(f"[WARNING] Some packages failed to install: {' '.join(failed_pkgs)}")
