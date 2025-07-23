@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "1.83"
+GXINSTALL_VERSION = "1.9"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -861,6 +861,10 @@ class InstallLogScreen(Screen):
         self.error_msg = None
         self.install_ready = False
 
+    def on_mount(self):
+        import asyncio
+        asyncio.create_task(self.start_install())
+
     async def start_install(self):
         await self.run_install()
 
@@ -1456,11 +1460,10 @@ class InstallScreen(Screen):
             # Save config to a temp file for the installer
             with open("/tmp/gxinstall.conf", "w") as f:
                 json.dump(CONFIG, f, indent=2)
-            # Switch to the InstallLogScreen and start install
+            # Switch to the InstallLogScreen and let it handle install start on mount
             install_screen = InstallLogScreen(CONFIG)
             self.app.push_screen(install_screen)
-            # Start the installation process
-            await install_screen.start_install()
+            # Do NOT start installation here; it will be started in InstallLogScreen.on_mount()
         elif event.button.id == "back_btn":
             self.app.pop_screen()
 
