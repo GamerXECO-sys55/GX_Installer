@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "1.91"
+GXINSTALL_VERSION = "1.93"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -861,9 +861,7 @@ class InstallLogScreen(Screen):
         self.error_msg = None
         self.install_ready = False
 
-    def on_mount(self):
-        import asyncio
-        asyncio.create_task(self.start_install())
+    # (Removed duplicate/async on_mount. Only keep the sync one below for UI setup.)
 
     async def start_install(self):
         await self.run_install()
