@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "1.9"
+GXINSTALL_VERSION = "1.91"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -875,6 +875,7 @@ class InstallLogScreen(Screen):
             Vertical(
                 Static(Panel.fit(Text("Installation Progress", style="bold magenta"), title="[bold magenta]Install Log", border_style="bold magenta")),
                 VerticalScroll(Static("", id="log_area")),
+                Center(Button("Start Installation", id="start_install_btn")),
             ),
             Vertical(
                 Static(
@@ -887,10 +888,18 @@ class InstallLogScreen(Screen):
             )
         )
 
-    async def on_mount(self):
-        # Wait for user confirmation before starting install
-        self.install_ready = True
-        self.query_one("#log_area", Static).update("Waiting for user confirmation...")
+    def on_mount(self):
+        self.install_started = False
+        self.query_one("#log_area", Static).update("[yellow]Review the summary then press 'Start Installation' to begin.[/yellow]")
+        self.query_one("#start_install_btn", Button).focus()
+
+    async def on_button_pressed(self, event):
+        if event.button.id == "start_install_btn" and not getattr(self, "install_started", False):
+            self.install_started = True
+            self.query_one("#log_area", Static).update("")
+            self.query_one("#start_install_btn", Button).remove()
+            import asyncio
+            asyncio.create_task(self.start_install())
 
     async def run_install(self):
         from asyncio.subprocess import PIPE, create_subprocess_exec
