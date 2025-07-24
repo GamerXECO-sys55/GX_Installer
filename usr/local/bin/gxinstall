@@ -141,7 +141,7 @@ def trigger_install():
     import subprocess
     subprocess.run([sys.executable, __file__, "--do-install"])
 
-GXINSTALL_VERSION = "1.99"
+GXINSTALL_VERSION = "2.01"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -269,10 +269,7 @@ def check_for_update():
         return
 
 
-check_for_update()
 
-
-# Enhanced subprocess runner with logging
 def run_command_with_logging(cmd, check=True, capture_output=True, text=True, log_prefix=""):
     """Run command with comprehensive logging"""
     log(f"{log_prefix}Executing command: {' '.join(cmd)}")
@@ -1275,6 +1272,7 @@ class GXInstallApp(App):
             trigger_install()
 
 if __name__ == "__main__":
+    check_for_update()  # Ensure update check before running the app
     if len(sys.argv) > 1 and sys.argv[1] == "--run-install":
         # Load config and run install directly (no TUI)
         with open("/tmp/gxinstall.conf") as f:
