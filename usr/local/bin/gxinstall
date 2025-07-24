@@ -141,7 +141,7 @@ def trigger_install():
     import subprocess
     subprocess.run([sys.executable, __file__, "--do-install"])
 
-GXINSTALL_VERSION = "2.00"
+GXINSTALL_VERSION = "1.99"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
