@@ -89,7 +89,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.0
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.5
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -141,16 +141,20 @@ def trigger_install():
     import subprocess
     subprocess.run([sys.executable, __file__, "--do-install"])
 
-GXINSTALL_VERSION = "2.01"
+GXINSTALL_VERSION = "2.20"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
 VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
+def version_tuple(v):
+    return tuple(map(int, (v.split("."))))
+
 def check_for_update():
     import urllib.request
     import shutil
     import tempfile
     import subprocess
+    import sys
     from rich.console import Console
     from rich.panel import Panel
     from rich.text import Text
@@ -164,7 +168,50 @@ def check_for_update():
     except Exception as e:
         console.print(Panel(Text(f"[WARNING] Could not check for updates: {e}", style="bold yellow"), border_style="yellow"))
         return
-    if remote_version > GXINSTALL_VERSION:
+    try:
+        if version_tuple(remote_version) > version_tuple(GXINSTALL_VERSION):
+            msg = Text(f"New Version {remote_version} is Available!", style="bold magenta on yellow")
+            msg2 = Text(f"Updating to {remote_version}...", style="bold cyan on black")
+            console.print(Panel(msg, border_style="bold green", title="[bold red]UPDATE"))
+            console.print(Panel(msg2, border_style="bold blue"))
+            # Download and extract new files
+            tmpdir = tempfile.mkdtemp()
+            try:
+                zip_path = os.path.join(tmpdir, "update.zip")
+                with urllib.request.urlopen(GITHUB_REPO_URL, timeout=10) as response, open(zip_path, "wb") as out_file:
+                    shutil.copyfileobj(response, out_file)
+                shutil.unpack_archive(zip_path, tmpdir)
+                # Find the extracted dir
+                extracted_dir = None
+                for name in os.listdir(tmpdir):
+                    if name.startswith("GX_Installer-"):
+                        extracted_dir = os.path.join(tmpdir, name)
+                        break
+                if not extracted_dir:
+                    raise Exception("Extracted update directory not found.")
+                repo_root = os.path.dirname(os.path.abspath(__file__))
+                # Copy all files from extracted_dir to repo_root, overwrite
+                for root_dir, dirs, files in os.walk(extracted_dir):
+                    rel_dir = os.path.relpath(root_dir, extracted_dir)
+                    target_dir = os.path.join(repo_root, rel_dir)
+                    os.makedirs(target_dir, exist_ok=True)
+                    for file in files:
+                        shutil.copy2(os.path.join(root_dir, file), os.path.join(target_dir, file))
+                console.print(Panel(Text("Update complete! Relaunching...", style="bold green"), border_style="green"))
+                # Relaunch self
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            except PermissionError:
+                console.print(Panel(Text("[ERROR] Update failed due to permissions (read-only filesystem?)", style="bold red"), border_style="red"))
+                return
+            except Exception as e:
+                console.print(Panel(Text(f"[ERROR] Update failed: {e}", style="bold red"), border_style="red"))
+                return
+        else:
+            return
+    except Exception as e:
+        console.print(Panel(Text(f"[ERROR] Update check failed: {e}", style="bold red"), border_style="red"))
+        return
+
         msg = Text(f"New Version {remote_version} is Available!", style="bold magenta on yellow")
         msg2 = Text(f"Updating to {remote_version}...", style="bold cyan on black")
         console.print(Panel(msg, border_style="bold green", title="[bold red]UPDATE"))
@@ -310,14 +357,14 @@ class ConfirmInstallScreen(Screen):
     def on_mount(self):
         self.query_one("#confirm_btn").focus()
 
-    async def on_button_pressed(self, event):
+    def on_button_pressed(self, event):
         if event.button.id == "confirm_btn":
             # Save config and exit TUI to trigger install
             with open("/tmp/gxinstall.conf", "w") as f:
                 json.dump(CONFIG, f, indent=2)
-            await self.app.exit(result="install")
+            self.app.exit(result="install")
         elif event.button.id == "cancel_btn":
-            await self.app.pop_screen()
+            self.app.pop_screen()
 
 # Example: Implement the Language menu logic
 def get_languages():
