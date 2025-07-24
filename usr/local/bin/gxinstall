@@ -89,7 +89,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 1.50
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.0
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ def trigger_install():
     import subprocess
     subprocess.run([sys.executable, __file__, "--do-install"])
 
-GXINSTALL_VERSION = "1.97"
+GXINSTALL_VERSION = "2.00"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -313,14 +313,14 @@ class ConfirmInstallScreen(Screen):
     def on_mount(self):
         self.query_one("#confirm_btn").focus()
 
-    def on_button_pressed(self, event):
+    async def on_button_pressed(self, event):
         if event.button.id == "confirm_btn":
             # Save config and exit TUI to trigger install
             with open("/tmp/gxinstall.conf", "w") as f:
                 json.dump(CONFIG, f, indent=2)
-            self.app.exit(result="install")
+            await self.app.exit(result="install")
         elif event.button.id == "cancel_btn":
-            self.app.pop_screen()
+            await self.app.pop_screen()
 
 # Example: Implement the Language menu logic
 def get_languages():
