@@ -89,7 +89,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.7
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 3.0
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ def trigger_install():
         print(f"[ERROR] Failed to trigger install: {e}")
 
 
-GXINSTALL_VERSION = "2.25"
+GXINSTALL_VERSION = "2.30"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -301,10 +301,11 @@ class ConfirmInstallScreen(Screen):
             Center(Button("Cancel", id="cancel_btn"))
         )
 
-    def on_mount(self):
-        self.query_one("#confirm_btn").focus()
+    async def on_mount(self):
+        await self.query_one("#confirm_btn").focus()
 
-    async def on_button_pressed(self, event):
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        log(f"Button pressed: {event.button.id}")
         if event.button.id == "confirm_btn":
             # Save config and exit TUI to trigger install
             with open("/tmp/gxinstall.conf", "w") as f:
