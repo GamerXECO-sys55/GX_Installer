@@ -79,7 +79,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 1.90
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.01
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "2.00"
+GXINSTALL_VERSION = "2.01"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -543,13 +543,14 @@ class MainMenu(Static):
                 if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', CONFIG['HOSTNAME']):
                     app.push_screen(InfoScreen("Invalid Hostname", "❌", "Invalid hostname (letters, numbers, '-', '_', max 63 chars).", back_screen=MainMenu()))
                     return
-                # Immediately start installation, no confirmation screen
-                app.push_screen(InstallLogScreen(CONFIG))
+                # Show install summary and ask for confirmation
+                app.push_screen(InstallSummaryScreen(CONFIG))
             elif title == "Disk":
                 app.push_screen(PreMountedScreen())
             else:
                 app.push_screen(InfoScreen(title, icon, "This feature will be implemented soon!"))
 
+{{ ... }}
 class MirrorScreen(Screen):
     def compose(self) -> ComposeResult:
         mirrors = get_mirrors()
@@ -902,6 +903,7 @@ class InstallLogScreen(Screen):
         
         self.log_lines.append(f"[INFO] Installing base system and packages: {' '.join(pkgs)}\n")
         self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        await self.refresh()
         try:
             # Try to install all packages, skipping any that fail
             failed_pkgs = []
@@ -924,6 +926,7 @@ class InstallLogScreen(Screen):
                 self.log_lines.append(f"[WARNING] Some packages failed to install: {' '.join(failed_pkgs)}\n")
             self.log_lines.append("[INFO] Base system and packages installed.\n")
             self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+            await self.refresh()
             # Step 2: Generate fstab
             proc2 = await create_subprocess_exec('genfstab', '-U', root, stdout=PIPE)
             fstab, _ = await proc2.communicate()
@@ -931,11 +934,13 @@ class InstallLogScreen(Screen):
                 f.write(fstab)
             self.log_lines.append("[INFO] fstab generated.\n")
             self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+            await self.refresh()
         except Exception as e:
             self.error_msg = str(e)
             error_msg = f"[ERROR] Installation failed: {e}\n"
             self.log_lines.append(error_msg)
             self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+            await self.refresh()
             self.install_done = True
             await asyncio.sleep(1)
             
@@ -949,6 +954,7 @@ class InstallLogScreen(Screen):
         # Step 3: Chroot and run post-install steps
         self.log_lines.append("[INFO] Entering chroot for configuration...\n")
         self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        await self.refresh()
         
         # Escape single quotes in config values
         def escape_single_quotes(s):
@@ -1425,7 +1431,33 @@ class FailScreen(Screen):
             self.app.pop_screen()
             # Optionally, reload last config or go to main menu
 
-# InstallScreen removed: install starts immediately from main menu
+class InstallSummaryScreen(Screen):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+
+    def compose(self) -> ComposeResult:
+        summary = '\n'.join([f'{k}: {v}' for k, v in self.config.items()])
+        yield Vertical(
+            Static(Panel.fit(Text(f"[bold magenta]Install Summary[/bold magenta]\n\n{summary}", style="bold yellow"), title="[bold magenta]Install Summary", border_style="bold magenta")),
+            Center(Button("Confirm", id="confirm_install_btn")),
+            Center(Button("Cancel", id="cancel_btn"))
+        )
+
+    def on_mount(self):
+        self.query_one("#confirm_install_btn").focus()
+
+    async def on_button_pressed(self, event):
+        if event.button.id == "confirm_install_btn":
+            # Save config to a temp file for the installer (optional)
+            with open("/tmp/gxinstall.conf", "w") as f:
+                json.dump(self.config, f, indent=2)
+            self.app.push_screen(InstallLogScreen(self.config))
+        elif event.button.id == "cancel_btn":
+            self.app.pop_screen()
+
+# --- END InstallSummaryScreen ---
+
 
 class ExitScreen(Screen):
     def compose(self) -> ComposeResult:
