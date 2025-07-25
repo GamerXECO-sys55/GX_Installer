@@ -12,6 +12,16 @@ import stat
 from pathlib import Path
 import tempfile
 
+# --- DEBUG: Print full traceback for any unhandled exception ---
+import traceback
+
+def custom_excepthook(exc_type, exc_value, exc_tb):
+    print("\n=== Unhandled Exception Traceback ===")
+    traceback.print_exception(exc_type, exc_value, exc_tb)
+    sys.exit(1)
+
+sys.excepthook = custom_excepthook
+
 # Check for required packages
 try:
     from textual.app import App, ComposeResult
@@ -79,7 +89,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 1.50
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 3.0
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -121,16 +131,42 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
+<<<<<<< HEAD
 GXINSTALL_VERSION = "1.2"
+=======
+# --- Install trigger helper ---
+def trigger_install():
+    print("\n[INFO] Starting installation...")
+    import subprocess
+    try:
+        result = subprocess.run([sys.executable, __file__, "--do-install"], capture_output=True, text=True)
+        log(f"[INSTALL] Triggered install subprocess. Return code: {result.returncode}")
+        if result.stdout:
+            log(f"[INSTALL] STDOUT: {result.stdout}")
+        if result.stderr:
+            log(f"[INSTALL] STDERR: {result.stderr}")
+        if result.returncode != 0:
+            print("[ERROR] Installation process failed. See logs for details.")
+    except Exception as e:
+        log(f"[INSTALL] Failed to trigger install: {e}", "ERROR")
+        print(f"[ERROR] Failed to trigger install: {e}")
+
+
+GXINSTALL_VERSION = "2.30"
+>>>>>>> d4b85d3bfff9bd76ae89894cfc4c5f4c697dccde
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
 VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
+def version_tuple(v):
+    return tuple(map(int, (v.split("."))))
+
 def check_for_update():
     import urllib.request
     import shutil
     import tempfile
     import subprocess
+    import sys
     from rich.console import Console
     from rich.panel import Panel
     from rich.text import Text
@@ -141,118 +177,104 @@ def check_for_update():
         # Fetch remote version
         with urllib.request.urlopen(GITHUB_VERSION_URL, timeout=5) as response:
             remote_version = response.read().decode().strip()
-    except Exception as e:
-        console.print(Panel(Text(f"[WARNING] Could not check for updates: {e}", style="bold yellow"), border_style="yellow"))
-        return
-    if remote_version > GXINSTALL_VERSION:
-        msg = Text(f"New Version {remote_version} is Available!", style="bold magenta on yellow")
-        msg2 = Text(f"Updating to {remote_version}...", style="bold cyan on black")
-        console.print(Panel(msg, border_style="bold green", title="[bold red]UPDATE"))
-        console.print(Panel(msg2, border_style="bold blue"))
-        # Download and extract new files
-        try:
+        log(f"[UPDATE] Local version: {GXINSTALL_VERSION}")
+        log(f"[UPDATE] Remote version: {remote_version}")
+        log(f"[UPDATE] Script path: {__file__}")
+        log(f"[UPDATE] VERSION file path: {VERSION_FILE}")
+        if version_tuple(remote_version) > version_tuple(GXINSTALL_VERSION):
+            msg = Text(f"New Version {remote_version} is Available!", style="bold magenta on yellow")
+            msg2 = Text(f"Updating to {remote_version}...", style="bold cyan on black")
+            console.print(Panel(msg, border_style="bold green", title="[bold red]UPDATE"))
+            console.print(Panel(msg2, border_style="bold blue"))
+            # Download and extract new files
             tmpdir = tempfile.mkdtemp()
-            zip_path = os.path.join(tmpdir, "gxinstall-repo.zip")
-            with urllib.request.urlopen(GITHUB_REPO_URL, timeout=30) as response, open(zip_path, "wb") as out_file:
+            zip_path = os.path.join(tmpdir, "update.zip")
+            with urllib.request.urlopen(GITHUB_REPO_URL, timeout=10) as response, open(zip_path, "wb") as out_file:
                 shutil.copyfileobj(response, out_file)
-                # Extract zip
-                import zipfile
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(tmpdir)
-                # Show extracted folder names for debugging
-                console.print(Panel(Text(f"Extracted contents: {os.listdir(tmpdir)}", style="bold yellow"), border_style="yellow"))
-                # Dynamically find extracted folder
-                import fnmatch
-                extracted_dir = None
-                found_dirs = []
-                for rootdir, dirs, files in os.walk(tmpdir):
-                    for d in dirs:
-                        full_path = os.path.join(rootdir, d)
-                        found_dirs.append(full_path)
-                        # Look for VERSION file in this directory
-                        if os.path.isfile(os.path.join(full_path, "VERSION")):
-                            extracted_dir = full_path
-                            break
-                    if extracted_dir:
+            shutil.unpack_archive(zip_path, tmpdir)
+            # Find the extracted dir
+            extracted_dir = None
+            found_dirs = []
+            for rootdir, dirs, files in os.walk(tmpdir):
+                for d in dirs:
+                    full_path = os.path.join(rootdir, d)
+                    found_dirs.append(full_path)
+                    # Look for VERSION file in this directory
+                    if os.path.isfile(os.path.join(full_path, "VERSION")):
+                        extracted_dir = full_path
                         break
-                console.print(Panel(Text(f"[DEBUG] All found directories: {found_dirs}", style="bold yellow"), border_style="yellow"))
-                if not extracted_dir and found_dirs:
-                    # Fallback: just use the first directory found
-                    extracted_dir = found_dirs[0]
-                    console.print(Panel(Text(f"[WARNING] Using fallback extracted folder: {extracted_dir}", style="bold yellow"), border_style="yellow"))
-                if not extracted_dir:
-                    raise Exception(f"Could not find extracted repo directory! Found dirs: {found_dirs}")
+                if extracted_dir:
+                    break
+            console.print(Panel(Text(f"[DEBUG] All found directories: {found_dirs}", style="bold yellow"), border_style="yellow"))
+            if not extracted_dir and found_dirs:
+                # Fallback: just use the first directory found
+                extracted_dir = found_dirs[0]
+                console.print(Panel(Text(f"[WARNING] Using fallback extracted folder: {extracted_dir}", style="bold yellow"), border_style="yellow"))
+            if not extracted_dir:
+                raise Exception(f"Could not find extracted repo directory! Found dirs: {found_dirs}")
 
-                # Make extracted_dir world-readable for the helper
-                import stat
-                
-                # Check if we need to go into usr/local/bin
-                bin_path = os.path.join(extracted_dir, "usr", "local", "bin")
-                if os.path.isdir(bin_path):
-                    console.print(Panel(Text(f"[DEBUG] Found usr/local/bin directory at: {bin_path}", style="bold yellow"), border_style="yellow"))
-                    extracted_dir = bin_path
-                else:
-                    console.print(Panel(Text(f"[WARNING] usr/local/bin not found in {extracted_dir}, using top-level", style="bold yellow"), border_style="yellow"))
-                
-                # Make everything readable
-                for root, dirs, files in os.walk(extracted_dir):
-                    os.chmod(root, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
-                    for d in dirs:
-                        os.chmod(os.path.join(root, d), stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
-                    for f in files:
-                        os.chmod(os.path.join(root, f), stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+            # Make extracted_dir world-readable for the helper
+            import stat
+            
+            # Check if we need to go into usr/local/bin
+            bin_path = os.path.join(extracted_dir, "usr", "local", "bin")
+            if os.path.isdir(bin_path):
+                console.print(Panel(Text(f"[DEBUG] Found usr/local/bin directory at: {bin_path}", style="bold yellow"), border_style="yellow"))
+                extracted_dir = bin_path
+            else:
+                console.print(Panel(Text(f"[WARNING] usr/local/bin not found in {extracted_dir}, using top-level", style="bold yellow"), border_style="yellow"))
+            
+            # Make everything readable
+            for root, dirs, files in os.walk(extracted_dir):
+                os.chmod(root, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+                for d in dirs:
+                    os.chmod(os.path.join(root, d), stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+                for f in files:
+                    os.chmod(os.path.join(root, f), stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
 
-                # Use update helper script to perform the update after this process exits
-                # Set repo_root to the directory containing this gxinstall script
-                repo_root = os.path.dirname(os.path.abspath(__file__))
-                helper_path = "/usr/local/bin/gxupdate_helper.py"
-                
-                # Debug: Print the directories being used
-                console.print(Panel(Text(
-                    f"[DEBUG] Using directories:\n"
-                    f"- Extracted dir: {extracted_dir}\n"
-                    f"- Repo root: {repo_root}\n"
-                    f"- Helper path: {helper_path}",
-                    style="bold yellow"
-                ), border_style="yellow"))
-                
-                # Verify the helper script exists and is executable
-                if not os.path.isfile(helper_path):
-                    raise FileNotFoundError(f"Helper script not found at {helper_path}")
-                if not os.access(helper_path, os.X_OK):
-                    os.chmod(helper_path, 0o755)  # Make it executable if it's not
-                
-                # Start the helper script
-                import subprocess
-                subprocess.Popen([
-                    "python3", 
-                    helper_path, 
-                    extracted_dir, 
-                    repo_root, 
-                    sys.argv[0]  # Path to the current script
-                ])
-                
-                console.print(Panel(
-                    Text(
-                        "Update downloaded. The installer will now exit so the update can be applied.\n"
-                        "Please re-run the installer in a few seconds!",
-                        style="bold green on black"
-                    ),
-                    border_style="bold green"
-                ))
-                sys.exit(0)
-        except Exception as e:
-            console.print(Panel(Text(f"[ERROR] Update failed: {e}", style="bold red"), border_style="red"))
-            sys.exit(1)
-    else:
-        # No update needed
-        return
+            # Use update helper script to perform the update after this process exits
+            # Set repo_root to the directory containing this gxinstall script
+            repo_root = os.path.dirname(os.path.abspath(__file__))
+            helper_path = "/usr/local/bin/gxupdate_helper.py"
+            
+            # Debug: Print the directories being used
+            console.print(Panel(Text(
+                f"[DEBUG] Using directories:\n"
+                f"- Extracted dir: {extracted_dir}\n"
+                f"- Repo root: {repo_root}\n"
+                f"- Helper path: {helper_path}",
+                style="bold yellow"
+            ), border_style="yellow"))
+            
+            # Verify the helper script exists and is executable
+            if not os.path.isfile(helper_path):
+                raise FileNotFoundError(f"Helper script not found at {helper_path}")
+            if not os.access(helper_path, os.X_OK):
+                os.chmod(helper_path, 0o755)  # Make it executable if it's not
+            
+            # Start the helper script
+            import subprocess
+            subprocess.Popen([
+                "python3", 
+                helper_path, 
+                extracted_dir, 
+                repo_root, 
+                sys.argv[0]  # Path to the current script
+            ])
+            
+            console.print(Panel(
+                Text(
+                    "Update downloaded. The installer will now exit so the update can be applied.\n"
+                    "Please re-run the installer in a few seconds!",
+                    style="bold green on black"
+                ),
+                border_style="bold green"
+            ))
+            sys.exit(0)
+    except Exception as e:
+        console.print(Panel(Text(f"[ERROR] Update failed: {e}", style="bold red"), border_style="red"))
+        sys.exit(1)
 
-
-check_for_update()
-
-
-# Enhanced subprocess runner with logging
 def run_command_with_logging(cmd, check=True, capture_output=True, text=True, log_prefix=""):
     """Run command with comprehensive logging"""
     log(f"{log_prefix}Executing command: {' '.join(cmd)}")
@@ -262,24 +284,44 @@ def run_command_with_logging(cmd, check=True, capture_output=True, text=True, lo
             log(f"{log_prefix}STDOUT: {result.stdout}")
         if result.stderr:
             log(f"{log_prefix}STDERR: {result.stderr}")
-        log(f"{log_prefix}Command completed successfully (exit code: {result.returncode})")
-        return result
     except subprocess.CalledProcessError as e:
         log(f"{log_prefix}Command failed with exit code {e.returncode}", "ERROR")
         if e.stdout:
             log(f"{log_prefix}STDOUT: {e.stdout}")
         if e.stderr:
             log(f"{log_prefix}STDERR: {e.stderr}")
-        raise
-    except Exception as e:
-        log(f"{log_prefix}Command failed with exception: {e}", "ERROR")
-        raise
 
-# Example: Implement the Language menu logic
+class ConfirmInstallScreen(Screen):
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(
+                Panel.fit(
+                    Text("Are you sure you want to start installation?", style="bold yellow"),
+                    title="[bold magenta]Confirm Installation",
+                    border_style="bold magenta"
+                )
+            ),
+            Center(Button("Confirm", id="confirm_btn")),
+            Center(Button("Cancel", id="cancel_btn"))
+        )
+
+    async def on_mount(self):
+        await self.query_one("#confirm_btn").focus()
+
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        log(f"Button pressed: {event.button.id}")
+        if event.button.id == "confirm_btn":
+            # Save config and exit TUI to trigger install
+            with open("/tmp/gxinstall.conf", "w") as f:
+                json.dump(CONFIG, f, indent=2)
+            await self.app.exit(result="install")
+        elif event.button.id == "cancel_btn":
+            await self.app.pop_screen()
+
 def get_languages():
     try:
-        langs = subprocess.check_output(['ls', '/usr/share/i18n/locales/']).decode().splitlines()
-        langs = [l for l in langs if l != 'POSIX']
+        with open('/usr/share/i18n/SUPPORTED') as f:
+            langs = [line.split()[0] for line in f if line.strip()]
         return sorted(langs)
     except Exception:
         return ['en_US.UTF-8']
@@ -479,7 +521,7 @@ class MainMenu(Static):
             id="main_menu"
         )
 
-    async def on_key(self, event):
+    def on_key(self, event):
         if event.key == "enter":
             list_view = self.query_one("#main_menu")
             idx = list_view.index
@@ -487,6 +529,8 @@ class MainMenu(Static):
             app = self.app
             if title == "Exit":
                 app.push_screen(ExitScreen())
+            elif title == "Install":
+                app.push_screen(ConfirmInstallScreen())
             elif title == "Profile":
                 app.push_screen(ProfileScreen())
             elif title == "Language":
@@ -511,39 +555,6 @@ class MainMenu(Static):
                 app.push_screen(NTPScreen())
             elif title == "Save":
                 app.push_screen(SaveScreen())
-            elif title == "Install":
-                # Validation before showing InstallScreen
-                required_fields = [
-                    ("LANGUAGE", "Language"),
-                    ("LOCALE", "Locales"),
-                    ("MIRROR", "Mirrors"),
-                    ("MOUNT_POINT", "Disk"),
-                    ("SWAP", "Swap"),
-                    ("USER", "User"),
-                    ("HOSTNAME", "Hostname"),
-                    ("PROFILE", "Profile"),
-                    ("KERNEL", "Kernels"),
-                    ("TIMEZONE", "Timezone"),
-                ]
-                missing_fields = []
-                for key, label in required_fields:
-                    if key not in CONFIG or not CONFIG[key]:
-                        missing_fields.append(label)
-                if missing_fields:
-                    app.push_screen(InfoScreen("Missing Option", "❌", f"Please select: {', '.join(missing_fields)}", back_screen=MainMenu()))
-                    return
-                # Extra validation for some fields
-                username_pattern = r'^[a-z_][a-z0-9_-]{0,31}$'
-                if not re.match(username_pattern, CONFIG['USER']):
-                    app.push_screen(InfoScreen("Invalid Username", "❌", "Username must be lowercase, start with a letter, and only use -, _.", back_screen=UserScreen()))
-                    return
-                if len(CONFIG['USER_PASS']) < 6:
-                    app.push_screen(InfoScreen("Weak Password", "❌", "Password must be at least 6 characters.", back_screen=UserScreen()))
-                    return
-                if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', CONFIG['HOSTNAME']):
-                    app.push_screen(InfoScreen("Invalid Hostname", "❌", "Invalid hostname (letters, numbers, '-', '_', max 63 chars).", back_screen=MainMenu()))
-                    return
-                app.push_screen(InstallScreen())
             elif title == "Disk":
                 app.push_screen(PreMountedScreen())
             else:
@@ -851,629 +862,22 @@ class SaveScreen(Screen):
         if event.button.id == "back_btn":
             self.app.pop_screen()
 
-class InstallLogScreen(Screen):
-    def __init__(self, config):
-        super().__init__()
-        self.config = config
-        self.log_lines = []
-        self.install_done = False
-        self.success = False
-        self.error_msg = None
-        self.install_ready = False
-
-    # (Removed duplicate/async on_mount. Only keep the sync one below for UI setup.)
-
-    async def start_install(self):
-        await self.run_install()
-
+class ConfirmInstallScreen(Screen):
     def compose(self) -> ComposeResult:
-        from textual.containers import Horizontal
-        summary = '\n'.join([f'{k}: {v}' for k, v in self.config.items()])
-        yield Horizontal(
-            Vertical(
-                Static(Panel.fit(Text("Installation Progress", style="bold magenta"), title="[bold magenta]Install Log", border_style="bold magenta")),
-                VerticalScroll(Static("", id="log_area")),
-                Center(Button("Start Installation", id="start_install_btn")),
-            ),
-            Vertical(
-                Static(
-                    Panel.fit(
-                        Text(f"[bold magenta]Install Summary[/bold magenta]\n\n{summary}", style="bold yellow"),
-                        title="[bold magenta]Install Summary",
-                        border_style="bold magenta"
-                    )
-                ),
-            )
-        )
-
-    def on_mount(self):
-        self.install_started = False
-        self.query_one("#log_area", Static).update("[yellow]Review the summary then press 'Start Installation' to begin.[/yellow]")
-        self.query_one("#start_install_btn", Button).focus()
-
-    async def on_button_pressed(self, event):
-        if event.button.id == "start_install_btn" and not getattr(self, "install_started", False):
-            self.install_started = True
-            self.query_one("#log_area", Static).update("")
-            self.query_one("#start_install_btn", Button).remove()
-            import asyncio
-            asyncio.create_task(self.start_install())
-
-    async def run_install(self):
-        from asyncio.subprocess import PIPE, create_subprocess_exec
-        import shlex
-        import os
-        import subprocess
-        
-        root = self.config.get('MOUNT_POINT', '/mnt')
-        
-        # Step 1: Build full package list for pacstrap
-        base_pkgs = ['base', 'linux-firmware', 'sudo', 'nano', 'vim', 'python', 'python-pip', 'wget', 'git']
-        hyprland_pkgs = ['hyprland', 'waybar', 'wofi', 'swaybg', 'swaylock', 'grim', 'slurp', 'wl-clipboard', 'xdg-desktop-portal-hyprland']
-        kernel = self.config.get('KERNEL', 'linux')
-        if kernel and kernel not in base_pkgs:
-            base_pkgs.append(kernel)
-        if 'ADDPKGS' in self.config and self.config['ADDPKGS']:
-            addpkgs = shlex.split(self.config['ADDPKGS'])
-            base_pkgs.extend(addpkgs)
-        pkgs = base_pkgs + hyprland_pkgs
-        
-        self.log_lines.append(f"[INFO] Installing base system and packages: {' '.join(pkgs)}\n")
-        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-        try:
-            # Try to install all packages, skipping any that fail
-            failed_pkgs = []
-            for pkg in pkgs:
-                proc = await create_subprocess_exec('pacstrap', root, pkg, stdout=PIPE, stderr=PIPE)
-                # Read and update logs in real time
-                while True:
-                    line = await proc.stdout.readline()
-                    if not line:
-                        break
-                    decoded = line.decode(errors="ignore")
-                    self.log_lines.append(decoded)
-                    self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-                    await self.refresh()  # Force TUI refresh for real-time logs
-                await proc.wait()
-                if proc.returncode != 0:
-                    self.log_lines.append(f"[WARNING] Failed to install package: {pkg}, skipping.\n")
-                    failed_pkgs.append(pkg)
-            if failed_pkgs:
-                self.log_lines.append(f"[WARNING] Some packages failed to install: {' '.join(failed_pkgs)}\n")
-            self.log_lines.append("[INFO] Base system and packages installed.\n")
-            self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-            # Step 2: Generate fstab
-            proc2 = await create_subprocess_exec('genfstab', '-U', root, stdout=PIPE)
-            fstab, _ = await proc2.communicate()
-            with open(f"{root}/etc/fstab", "wb") as f:
-                f.write(fstab)
-            self.log_lines.append("[INFO] fstab generated.\n")
-            self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-        except Exception as e:
-            self.error_msg = str(e)
-            error_msg = f"[ERROR] Installation failed: {e}\n"
-            self.log_lines.append(error_msg)
-            self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-            self.install_done = True
-            await asyncio.sleep(1)
-            
-            # Safely handle the case where self.app might be None
-            if hasattr(self, 'app') and self.app is not None:
-                self.app.push_screen(FailScreen(self.error_msg))
-            else:
-                # If we can't push to the app, at least print the error
-                print(error_msg, file=sys.stderr)
-            return
-        # Step 3: Chroot and run post-install steps
-        self.log_lines.append("[INFO] Entering chroot for configuration...\n")
-        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-        
-        # Escape single quotes in config values
-        def escape_single_quotes(s):
-            return str(s).replace("'", "'\\''") if s else ''
-            
-        chroot_script = f"""#!/bin/bash
-set -euo pipefail
-
-# Log function for chroot environment
-log() {{
-    echo "[CHROOT] $1"
-    logger -t gxinstall "$1"
-}}
-
-# Error handling
-error_exit() {{
-    log "ERROR: $1"
-    exit 1
-}}
-
-# Validate required variables
-if [ -z "{escape_single_quotes(self.config.get('DISK', ''))}" ]; then
-    error_exit "No disk specified for installation"
-fi
-
-# Set up locale and language
-setup_locale() {{
-    local lang='{escape_single_quotes(self.config.get('LANGUAGE', ''))}'
-    local locale='{escape_single_quotes(self.config.get('LOCALE', ''))}'
-    
-    if [ -n "$locale" ]; then
-        log "Setting up locale: $locale"
-        if ! grep -q "^$locale" /etc/locale.gen; then
-            error_exit "Locale $locale is not supported"
-        fi
-        sed -i "/^$locale/s/^#//" /etc/locale.gen || error_exit "Failed to enable locale $locale"
-        locale-gen || error_exit "Failed to generate locales"
-        echo "LANG=$locale" > /etc/locale.conf || error_exit "Failed to set system locale"
-    fi
-    
-    if [ -n "$lang" ]; then
-        echo "LANGUAGE=$lang" >> /etc/locale.conf
-    fi
-}}
-
-# Set up timezone
-setup_timezone() {{
-    local timezone='{escape_single_quotes(self.config.get('TIMEZONE', ''))}'
-    if [ -n "$timezone" ]; then
-        log "Setting timezone to $timezone"
-        if [ ! -f "/usr/share/zoneinfo/$timezone" ]; then
-            error_exit "Invalid timezone: $timezone"
-        fi
-        ln -sf "/usr/share/zoneinfo/$timezone" /etc/localtime || error_exit "Failed to set timezone"
-        hwclock --systohc || error_exit "Failed to sync hardware clock"
-    fi
-}}
-
-# Set up NTP
-setup_ntp() {{
-    local ntp='{escape_single_quotes(self.config.get('NTP', ''))}'
-    if [ "$ntp" = "enabled" ]; then
-        log "Enabling NTP"
-        systemctl enable systemd-timesyncd.service || error_exit "Failed to enable NTP"
-    fi
-}}
-
-# Set up hostname
-setup_hostname() {{
-    local hostname='{escape_single_quotes(self.config.get('HOSTNAME', 'gamerx-pc'))}'
-    if [ -n "$hostname" ]; then
-        log "Setting hostname to $hostname"
-        echo "$hostname" > /etc/hostname || error_exit "Failed to set hostname"
-        
-        # Update /etc/hosts
-        cat > /etc/hosts <<EOF
-127.0.0.1   localhost
-::1         localhost
-127.0.1.1   $hostname.localdomain $hostname
-EOF
-    fi
-}}
-
-# Create user account
-create_user() {{
-    local user='{escape_single_quotes(self.config.get('USER', ''))}'
-    local user_pass='{escape_single_quotes(self.config.get('USER_PASS', ''))}'
-    local user_sudo='{escape_single_quotes(self.config.get('USER_SUDO', ''))}'
-    
-    if [ -n "$user" ] && [ -n "$user_pass" ]; then
-        log "Creating user: $user"
-        if ! id "$user" &>/dev/null; then
-            # Create user with secure defaults
-            useradd -m -G wheel,audio,video,optical,storage,games,power,scanner,network,rfkill,sys -s /bin/bash "$user" ||
-                error_exit "Failed to create user $user"
-                
-            # Set password
-            echo "$user:$user_pass" | chpasswd || error_exit "Failed to set password for $user"
-            
-            # Set password expiration
-            passwd -n 30 -x 90 -w 7 "$user" || error_exit "Failed to set password policy for $user"
-            
-            # Configure sudo access
-            if [ "$user_sudo" = "yes" ]; then
-                log "Granting sudo access to $user"
-                if ! grep -q '^%wheel' /etc/sudoers; then
-                    echo '%wheel ALL=(ALL) ALL' > /etc/sudoers.d/10-wheel ||
-                        error_exit "Failed to configure sudo access"
-                    chmod 440 /etc/sudoers.d/10-wheel
-                fi
-            fi
-        else
-            log "User $user already exists, skipping creation"
-        fi
-    fi
-}}
-
-# Configure package manager
-configure_pacman() {{
-    local mirror='{escape_single_quotes(self.config.get('MIRROR', ''))}'
-    
-    # Update mirrorlist if specified
-    if [ -n "$mirror" ]; then
-        log "Configuring pacman mirror: $mirror"
-        if ! curl -s "$mirror" >/dev/null; then
-            error_exit "Mirror $mirror is not reachable"
-        fi
-        echo "Server = $mirror" > /etc/pacman.d/mirrorlist || error_exit "Failed to update mirrorlist"
-    fi
-    
-    # Configure pacman options
-    sed -i 's/^#ParallelDownloads = 5/ParallelDownloads = 5/' /etc/pacman.conf
-    sed -i 's/^#Color/Color/' /etc/pacman.conf
-    
-    # Initialize keyring
-    pacman-key --init || error_exit "Failed to initialize pacman keyring"
-    pacman-key --populate archlinux || error_exit "Failed to populate pacman keyring"
-}}
-
-# Install bootloader
-install_bootloader() {{
-    local disk='{escape_single_quotes(self.config.get('DISK', '/dev/sda'))}'
-    
-    # Verify disk exists and is a block device
-    if [ ! -b "$disk" ]; then
-        error_exit "Disk $disk is not a valid block device"
-    fi
-    
-    # Detect firmware interface type
-    if [ -d /sys/firmware/efi/efivars ]; then
-        log "Detected UEFI system. Installing UEFI bootloader..."
-        
-        # Install required packages
-        pacman -S --noconfirm grub efibootmgr os-prober || error_exit "Failed to install UEFI bootloader packages"
-        
-        # Install GRUB for UEFI
-        grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --recheck ||
-            error_exit "Failed to install GRUB for UEFI"
-            
-    else
-        log "Detected BIOS/Legacy system"
-        
-        # Check for GPT partition table
-        if parted -s "$disk" print | grep -q 'Partition Table: gpt'; then
-            log "Detected GPT partition table"
-            
-            # Check for BIOS boot partition
-            if ! sgdisk -p "$disk" | grep -q 'EF02'; then
-                error_exit "BIOS boot partition (type EF02) not found on GPT disk"
-            fi
-            
-            # Install GRUB for BIOS on GPT
-            pacman -S --noconfirm grub || error_exit "Failed to install GRUB packages"
-            grub-install --target=i386-pc "$disk" --recheck ||
-                error_exit "Failed to install GRUB for BIOS on GPT"
-                
-        else
-            log "Detected MBR partition table"
-            
-            # Install GRUB for BIOS on MBR
-            pacman -S --noconfirm grub || error_exit "Failed to install GRUB packages"
-            grub-install --target=i386-pc "$disk" --recheck ||
-                error_exit "Failed to install GRUB for BIOS on MBR"
-        fi
-    fi
-    
-    # Generate GRUB config
-    grub-mkconfig -o /boot/grub/grub.cfg || error_exit "Failed to generate GRUB configuration"
-    
-    # Install SDDM display manager
-    pacman -S --noconfirm sddm || error_exit "Failed to install SDDM"
-    systemctl enable sddm || error_exit "Failed to enable SDDM"
-}}
-
-# Main execution
-log "Starting chroot configuration"
-
-# Run setup functions
-setup_locale
-setup_timezone
-setup_ntp
-setup_hostname
-create_user
-configure_pacman
-install_bootloader
-
-log "Chroot configuration completed successfully"
-"""
-
-        # Install HyDE theme with better error handling
-        install_hyde_script = """
-        #!/bin/bash
-        set -euo pipefail
-        
-        log() {
-            echo "[HYDE] $1"
-            logger -t gxinstall-hyde "$1"
-        }
-        
-        error_exit() {
-            log "ERROR: $1"
-            exit 1
-        }
-        
-        # Install HyDE theme
-        install_hyde_theme() {
-            log "Installing HyDE theme..."
-            
-            # Install required packages
-            if ! pacman -S --needed --noconfirm git base-devel; then
-                log "WARNING: Failed to install required packages, but continuing..."
-            fi
-            
-            # Create a temporary directory with secure permissions
-            TEMP_DIR=$(mktemp -d -t hyde-XXXXXX)
-            if [ ! -d "$TEMP_DIR" ]; then
-                error_exit "Failed to create temporary directory"
-            fi
-            
-            # Set secure permissions
-            chmod 700 "$TEMP_DIR"
-            
-            # Function to clean up temporary files
-            cleanup() {
-                if [ -d "$TEMP_DIR" ]; then
-                    log "Cleaning up temporary files..."
-                    rm -rf "$TEMP_DIR"
-                fi
-            }
-            
-            # Ensure cleanup happens on exit
-            trap cleanup EXIT
-            
-            # Clone the repository
-            log "Cloning HyDE repository..."
-            if ! git clone https://github.com/GamerX-OS/HyDE "$TEMP_DIR/HyDE"; then
-                error_exit "Failed to clone HyDE repository"
-            fi
-            
-            # Change to the HyDE directory
-            cd "$TEMP_DIR/HyDE" || error_exit "Failed to change to HyDE directory"
-            
-            # Check if install script exists
-            if [ ! -f "Scripts/install.sh" ]; then
-                error_exit "HyDE install script not found"
-            fi
-            
-            # Make the install script executable
-            chmod +x "Scripts/install.sh"
-            
-            # Run the install script
-            log "Running HyDE installation script..."
-            if ! ./Scripts/install.sh; then
-                error_exit "HyDE installation script failed"
-            fi
-            
-            log "HyDE theme installation completed successfully"
-            return 0
-        }
-        
-        # Main execution
-        install_hyde_theme
-        """
-        
-        # Write HyDE installation script to a temporary file
-        with open(f"{root}/tmp/install_hyde.sh", "w") as f:
-            f.write(install_hyde_script)
-        os.chmod(f"{root}/tmp/install_hyde.sh", 0o755)
-        
-        # Execute HyDE installation in chroot
-        self.log_lines.append("[INFO] Installing HyDE theme...\n")
-        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-        
-        hyde_proc = await create_subprocess_exec('arch-chroot', root, '/tmp/install_hyde.sh', 
-                                              stdout=PIPE, stderr=PIPE)
-        
-        if hyde_proc.stdout:
-            while True:
-                line = await hyde_proc.stdout.readline()
-                if not line:
-                    break
-                self.log_lines.append(line.decode())
-                self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-        
-        await hyde_proc.wait()
-        
-        if hyde_proc.returncode != 0:
-            self.log_lines.append("[WARNING] HyDE theme installation completed with warnings\n")
-        else:
-            self.log_lines.append("[INFO] HyDE theme installation completed successfully\n")
-        
-        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-        
-        # Clean up installation script
-        if os.path.exists(f"{root}/tmp/install_hyde.sh"):
-            os.remove(f"{root}/tmp/install_hyde.sh")
-        
-        # Install user-specific Hyprland theme
-        self.log_lines.append("[INFO] Installing user Hyprland theme...\n")
-        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-        
-        # Create user theme directory
-        theme_dir = f"{root}/home/{self.config.get('USER', '')}/.themes"
-        os.makedirs(theme_dir, exist_ok=True)
-        os.chown(theme_dir, int(self.config.get('USER_ID', 1000)), int(self.config.get('USER_GID', 1000)))
-        
-        # Clone user theme
-        user_theme_cmd = [
-            'arch-chroot', root, 'runuser', '-u', self.config.get('USER', ''),
-            '--', 'git', 'clone', '--depth=1',
-            'https://github.com/GamerXECO-sys55/Hyprland_GX_theme',
-            f"/home/{self.config.get('USER', '')}/HyDE"
-        ]
-        
-        try:
-            await run_command_with_logging(user_theme_cmd, log_prefix="[USER_THEME] ")
-            
-            # Install user theme
-            install_cmd = [
-                'arch-chroot', root, 'runuser', '-u', self.config.get('USER', ''),
-                '--', 'bash', '-c', 
-                f'cd /home/{self.config.get("USER", "")}/HyDE/Scripts && ./install.sh'
-            ]
-            await run_command_with_logging(install_cmd, log_prefix="[USER_THEME_INSTALL] ")
-            
-            self.log_lines.append("[INFO] User theme installation completed\n")
-        except Exception as e:
-            self.log_lines.append(f"[WARNING] User theme installation failed: {e}\n")
-        
-        # Install yay from AUR as user
-        self.log_lines.append("[INFO] Installing yay from AUR...\n")
-        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-        
-        yay_cmds = [
-            (['arch-chroot', root, 'runuser', '-u', self.config.get('USER', ''), '--', 'git', 'clone', 'https://aur.archlinux.org/yay.git', f'/home/{self.config.get("USER", "")}/yay'], "Cloning yay..."),
-            (['chown', '-R', f'{self.config.get("USER", "")}:{self.config.get("USER", "")}', f'/home/{self.config.get("USER", "")}/yay'], "Setting permissions..."),
-            (['arch-chroot', root, 'runuser', '-u', self.config.get('USER', ''), '--', 'bash', '-c', f'cd /home/{self.config.get("USER", "")}/yay && makepkg -si --noconfirm'], "Building yay...")
-        ]
-        
-        for cmd, desc in yay_cmds:
-            try:
-                self.log_lines.append(f"[INFO] {desc}\n")
-                self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-                proc = await create_subprocess_exec(*cmd, stdout=PIPE, stderr=PIPE)
-                
-                if proc.stdout:
-                    while True:
-                        line = await proc.stdout.readline()
-                        if not line:
-                            break
-                        self.log_lines.append(line.decode())
-                        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-                
-                await proc.wait()
-                if proc.returncode != 0:
-                    raise Exception(f"Command failed with exit code {proc.returncode}")
-                    
-            except Exception as e:
-                self.log_lines.append(f"[WARNING] Failed to {desc.lower()}: {e}\n")
-                self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-                break
-                
-        # Install profile-specific packages
-        self.log_lines.append("[INFO] Installing profile-specific packages...\n")
-        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-        
-        profile = self.config.get('PROFILE', 'GamerX Hyprland')
-        installer_script = {
-            'GamerX Hyprland': 'install_hyprland.sh',
-            'GamerX Hyprland+Gaming': 'install_gaming.sh',
-            'GamerX Hyprland+Hacking': 'install_hacking.sh'
-        }.get(profile, 'install_hyprland.sh')
-        
-        profile_install_cmd = [
-            'arch-chroot', root, 'bash', '-c',
-            f'cp /usr/local/bin/Installer/{installer_script} /tmp/installer.sh && '
-            'chmod +x /tmp/installer.sh && '
-            '/tmp/installer.sh'
-        ]
-        
-        try:
-            await run_command_with_logging(profile_install_cmd, log_prefix="[PROFILE_INSTALL] ")
-            self.log_lines.append(f"[INFO] Successfully installed {profile} profile\n")
-        except Exception as e:
-            self.log_lines.append(f"[WARNING] Failed to install profile {profile}: {e}\n")
-        
-        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-        
-        # Final cleanup
-        cleanup_cmds = [
-            (['rm', '-f', f"{root}/tmp/installer.sh"], "Cleaning up temporary files..."),
-            (['rm', '-f', f"{root}/tmp/gx_chroot.sh"], "Removing chroot script...")
-        ]
-        
-        for cmd, desc in cleanup_cmds:
-            try:
-                proc = await create_subprocess_exec(*cmd)
-                await proc.wait()
-            except Exception as e:
-                self.log_lines.append(f"[WARNING] {desc} failed: {e}\n")
-                
-        self.log_lines.append("[INFO] Installation process completed successfully!\n")
-        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-        
-        # Add post-install cleanup for .gnupg
-        chroot_script += '\n# Cleanup .gnupg folders (if exist)\nrm -rf /root/.gnupg /home/*/.gnupg || true\n'
-        # Write chroot script to /tmp and execute in chroot
-        with open(f"{root}/tmp/gx_chroot.sh", "w") as f:
-            f.write(chroot_script)
-        os.chmod(f"{root}/tmp/gx_chroot.sh", 0o755)
-        self.log_lines.append("[INFO] Running post-install configuration in chroot...\n")
-        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-        proc = await create_subprocess_exec('arch-chroot', root, '/tmp/gx_chroot.sh', stdout=PIPE, stderr=PIPE)
-        if proc.stdout is not None:
-            while True:
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-                self.log_lines.append(line.decode())
-                self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-            await proc.wait()
-        self.log_lines.append("[INFO] Post-install configuration complete.\n")
-        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-        await asyncio.sleep(1)
-        self.app.push_screen(SuccessScreen())
-
-class SuccessScreen(Screen):
-    def compose(self) -> ComposeResult:
-        yield Vertical(
-            Static(Panel.fit(Text("GamerX Linux Installed Successfully!", style="bold green"), title="[bold green]Success!", border_style="bold green")),
-            Center(Button("Go into chroot", id="chroot_btn")),
-            Center(Button("Exit", id="exit_btn"))
-        )
-    def on_button_pressed(self, event):
-        if event.button.id == "chroot_btn":
-            os.system(f"arch-chroot {CONFIG.get('MOUNT_POINT', '/mnt')} /bin/bash")
-        elif event.button.id == "exit_btn":
-            self.app.exit()
-
-class FailScreen(Screen):
-    def __init__(self, error_msg):
-        super().__init__()
-        self.error_msg = error_msg
-    def compose(self) -> ComposeResult:
-        yield Vertical(
-            Static(Panel.fit(Text(f"Installation failed:\n{self.error_msg}", style="bold red"), title="[bold red]Install Failed", border_style="bold red")),
-            Center(Button("Retry", id="retry_btn")),
-            Center(Button("Exit", id="exit_btn"))
-        )
-    def on_button_pressed(self, event):
-        if event.button.id == "exit_btn":
-            self.app.exit()
-        elif event.button.id == "retry_btn":
-            self.app.pop_screen()
-            # Optionally, reload last config or go to main menu
-
-class InstallScreen(Screen):
-    def compose(self) -> ComposeResult:
-        summary = '\n'.join([f'{k}: {v}' for k, v in CONFIG.items()])
-        msg = f'[bold magenta]GamerX Linux will be installed with the following settings:[/bold magenta]\n\n{summary}\n\n[bold yellow]Proceed with installation?[/bold yellow]'
         yield Vertical(
             Static(
                 Panel.fit(
-                    Text(msg, style="bold yellow"),
-                    title="[bold magenta]Install Summary",
+                    Text("Are you sure you want to install?", style="bold yellow"),
+                    title="[bold magenta]Confirm Install",
                     border_style="bold magenta"
                 )
             ),
-            Center(Button("Confirm", id="confirm_install_btn")),
-            Center(Button("Back", id="back_btn"))
+            Center(Button("Confirm", id="confirm_btn")),
+            Center(Button("Cancel", id="cancel_btn"))
         )
 
     def on_mount(self):
-        self.query_one("#confirm_install_btn").focus()
-
-    async def on_button_pressed(self, event):
-        if event.button.id == "confirm_install_btn":
-            # Save config to a temp file for the installer
-            with open("/tmp/gxinstall.conf", "w") as f:
-                json.dump(CONFIG, f, indent=2)
-            # Switch to the InstallLogScreen and let it handle install start on mount
-            install_screen = InstallLogScreen(CONFIG)
-            self.app.push_screen(install_screen)
-            # Do NOT start installation here; it will be started in InstallLogScreen.on_mount()
-        elif event.button.id == "back_btn":
-            self.app.pop_screen()
-
+        self.query_one("#confirm_btn").focus()
 class ExitScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Vertical(
@@ -1861,7 +1265,12 @@ class GXInstallApp(App):
     def on_mount(self):
         self.query_one("#main_menu").focus()
 
+    def on_exit(self, result=None):
+        if result == "install":
+            trigger_install()
+
 if __name__ == "__main__":
+    check_for_update()  # Ensure update check before running the app
     if len(sys.argv) > 1 and sys.argv[1] == "--run-install":
         # Load config and run install directly (no TUI)
         with open("/tmp/gxinstall.conf") as f:
