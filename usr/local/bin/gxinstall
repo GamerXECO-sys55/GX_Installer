@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "1.98"
+GXINSTALL_VERSION = "1.99"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -868,37 +868,18 @@ class InstallLogScreen(Screen):
         await self.run_install()
 
     def compose(self) -> ComposeResult:
-        from textual.containers import Horizontal
-        summary = '\n'.join([f'{k}: {v}' for k, v in self.config.items()])
-        yield Horizontal(
-            Vertical(
-                Static(Panel.fit(Text("Installation Progress", style="bold magenta"), title="[bold magenta]Install Log", border_style="bold magenta")),
-                VerticalScroll(Static("", id="log_area")),
-                Center(Button("Start Installation", id="start_install_btn")),
-            ),
-            Vertical(
-                Static(
-                    Panel.fit(
-                        Text(f"[bold magenta]Install Summary[/bold magenta]\n\n{summary}", style="bold yellow"),
-                        title="[bold magenta]Install Summary",
-                        border_style="bold magenta"
-                    )
-                ),
-            )
+        yield Vertical(
+            Static(Panel.fit(Text("Installation Progress", style="bold magenta"), title="[bold magenta]Install Log", border_style="bold magenta")),
+            VerticalScroll(Static("", id="log_area")),
         )
 
-    def on_mount(self):
-        self.install_started = False
-        self.query_one("#log_area", Static).update("[yellow]Review the summary then press 'Start Installation' to begin.[/yellow]")
-        self.query_one("#start_install_btn", Button).focus()
+    async def on_mount(self):
+        self.install_started = True
+        self.query_one("#log_area", Static).update("[yellow]Starting installation...[/yellow]")
+        import asyncio
+        asyncio.create_task(self.start_install())
 
-    async def on_button_pressed(self, event):
-        if event.button.id == "start_install_btn" and not getattr(self, "install_started", False):
-            self.install_started = True
-            self.query_one("#log_area", Static).update("")
-            self.query_one("#start_install_btn", Button).remove()
-            import asyncio
-            asyncio.create_task(self.start_install())
+    # No button press handling needed: install starts automatically
 
     async def run_install(self):
         from asyncio.subprocess import PIPE, create_subprocess_exec
