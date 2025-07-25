@@ -79,7 +79,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 1.50
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 1.80
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "1.97"
+GXINSTALL_VERSION = "1.98"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -543,7 +543,8 @@ class MainMenu(Static):
                 if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', CONFIG['HOSTNAME']):
                     app.push_screen(InfoScreen("Invalid Hostname", "❌", "Invalid hostname (letters, numbers, '-', '_', max 63 chars).", back_screen=MainMenu()))
                     return
-                app.push_screen(InstallScreen())
+                # Immediately start installation, no confirmation screen
+                app.push_screen(InstallLogScreen(CONFIG))
             elif title == "Disk":
                 app.push_screen(PreMountedScreen())
             else:
@@ -1443,36 +1444,7 @@ class FailScreen(Screen):
             self.app.pop_screen()
             # Optionally, reload last config or go to main menu
 
-class InstallScreen(Screen):
-    def compose(self) -> ComposeResult:
-        summary = '\n'.join([f'{k}: {v}' for k, v in CONFIG.items()])
-        msg = f'[bold magenta]GamerX Linux will be installed with the following settings:[/bold magenta]\n\n{summary}\n\n[bold yellow]Proceed with installation?[/bold yellow]'
-        yield Vertical(
-            Static(
-                Panel.fit(
-                    Text(msg, style="bold yellow"),
-                    title="[bold magenta]Install Summary",
-                    border_style="bold magenta"
-                )
-            ),
-            Center(Button("Confirm", id="confirm_install_btn")),
-            Center(Button("Back", id="back_btn"))
-        )
-
-    def on_mount(self):
-        self.query_one("#confirm_install_btn").focus()
-
-    async def on_button_pressed(self, event):
-        if event.button.id == "confirm_install_btn":
-            # Save config to a temp file for the installer
-            with open("/tmp/gxinstall.conf", "w") as f:
-                json.dump(CONFIG, f, indent=2)
-            # Switch to the InstallLogScreen and let it handle install start on mount
-            install_screen = InstallLogScreen(CONFIG)
-            self.app.push_screen(install_screen)
-            # Do NOT start installation here; it will be started in InstallLogScreen.on_mount()
-        elif event.button.id == "back_btn":
-            self.app.pop_screen()
+# InstallScreen removed: install starts immediately from main menu
 
 class ExitScreen(Screen):
     def compose(self) -> ComposeResult:
