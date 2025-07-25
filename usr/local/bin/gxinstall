@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "2.01"
+GXINSTALL_VERSION = "2.02"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -550,7 +550,6 @@ class MainMenu(Static):
             else:
                 app.push_screen(InfoScreen(title, icon, "This feature will be implemented soon!"))
 
-{{ ... }}
 class MirrorScreen(Screen):
     def compose(self) -> ComposeResult:
         mirrors = get_mirrors()
