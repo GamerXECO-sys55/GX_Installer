@@ -79,7 +79,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.04
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.05
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "2.04"
+GXINSTALL_VERSION = "2.05"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -1443,8 +1443,8 @@ class InstallSummaryScreen(Screen):
             Center(Button("Cancel", id="cancel_btn"))
         )
 
-    async def on_mount(self):
-        await self.query_one("#confirm_install_btn").focus()
+    def on_mount(self):
+        self.query_one("#confirm_install_btn").focus()
 
     async def on_button_pressed(self, event):
         if event.button.id == "confirm_install_btn":
