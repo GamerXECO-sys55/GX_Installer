@@ -79,7 +79,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 1.80
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 1.90
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "1.99"
+GXINSTALL_VERSION = "2.00"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -873,11 +873,11 @@ class InstallLogScreen(Screen):
             VerticalScroll(Static("", id="log_area")),
         )
 
-    async def on_mount(self):
+    def on_mount(self):
         self.install_started = True
         self.query_one("#log_area", Static).update("[yellow]Starting installation...[/yellow]")
-        import asyncio
-        asyncio.create_task(self.start_install())
+        # Schedule the async install to start after mount
+        self.set_timer(0, lambda: self.app.call_later(self.start_install))
 
     # No button press handling needed: install starts automatically
 
