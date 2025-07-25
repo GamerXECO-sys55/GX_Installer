@@ -1,0 +1,2064 @@
+#!/usr/bin/env python3
+import sys
+import os
+import json
+import glob
+import re
+import asyncio
+import threading
+import datetime
+import shutil
+import stat
+from pathlib import Path
+import tempfile
+
+# Check for required packages
+try:
+    from textual.app import App, ComposeResult
+    from textual.widgets import Header, Footer, Static, ListView, ListItem, Button, Input, Checkbox
+    from textual.containers import Center, Vertical, VerticalScroll
+    from textual.screen import Screen
+    from textual.reactive import reactive
+    from rich.panel import Panel
+    from rich.text import Text
+    from rich.style import Style
+except ImportError as e:
+    print("Error: Missing required Python package: " + str(e))
+    print("Please install the required packages with:")
+    print("pip install textual rich")
+    sys.exit(1)
+
+# Setup logging
+def setup_logging():
+    """Setup comprehensive logging for the installation process"""
+    log_dir = "/tmp/gxinstall_logs"
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        # Ensure log directory has correct permissions
+        os.chmod(log_dir, 0o755)
+    except Exception as e:
+        print(f"Failed to create log directory: {e}")
+        sys.exit(1)
+        
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = os.path.join(log_dir, f"gxinstall_{timestamp}.log")
+    
+    def log(message, level="INFO"):
+        """Log message to file and console"""
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = f"[{timestamp}] [{level}] {message}"
+        try:
+            with open(log_file, "a") as f:
+                f.write(f"{log_entry}\n")
+            print(f"[{level}] {message}")
+        except Exception as e:
+            print(f"[ERROR] Failed to write to log: {e}")
+    
+    # Return the log function and log file only (no verify_paths)
+    return log, log_file
+
+# Initialize logging
+try:
+    log, log_file = setup_logging()
+    log("GamerX Installer started - Logging enabled")
+    # Path verification removed as requested
+except Exception as e:
+    print(f"\n[FATAL] Failed to initialize installer: {str(e)}")
+    sys.exit(1)
+
+GAMERX_ASCII = r'''
+  ██████╗  █████╗ ███╗   ███╗███████╗██████╗ ██╗  ██╗
+  ██╔══██╗██╔══██╗████╗ ████║██╔════╝██╔══██╗╚██╗██╔╝
+  ██████╔╝███████║██╔████╔██║█████╗  ██████╔╝ ╚███╔╝ 
+  ██╔═══╝ ██╔══██║██║╚██╔╝██║██╔══╝  ██╔══██╗ ██╔██╗ 
+  ██║     ██║  ██║██║ ╚═╝ ██║███████╗██║  ██║██╔╝ ██╗
+  ╚═╝     ╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
+'''
+
+INFO_TEXT = Text.from_markup("""
+────────────────────────────────────────────────────────────
+A modern, user-friendly installer for everyone.
+
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 1.90
+[bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
+[bold cyan]Email:[/] mangeshchoudhary35@gmail.com
+────────────────────────────────────────────────────────────
+""")
+
+MENU_TITLES = [
+    ("🟦", "Language"),
+    ("🟦", "Locales"),
+    ("🟦", "Mirrors"),
+    ("🟦", "Disk"),
+    ("🟦", "Swap"),
+    ("🟦", "User"),
+    ("🟦", "Hostname"),
+    ("🟦", "Profile"),
+    ("🟦", "Kernels"),
+    ("🟦", "Additional Packages"),
+    ("🟦", "Timezone"),
+    ("🟦", "NTP"),
+    ("🟦", "Save"),
+    ("🟦", "Install"),
+    ("🟦", "Exit")
+]
+
+PROFILE_OPTIONS = [
+    ("🟦", "GamerX Hyprland"),
+    ("🟦", "GamerX Hyprland+Gaming"),
+    ("🟦", "GamerX Hyprland+Hacking")
+]
+
+# Add a configuration dictionary to store user selections
+CONFIG = {}
+# Load saved config if present
+import os
+import json
+if os.path.exists('/tmp/gxinstall.conf'):
+    try:
+        with open('/tmp/gxinstall.conf', 'r') as f:
+            CONFIG.update(json.load(f))
+    except Exception:
+        pass
+
+GXINSTALL_VERSION = "2.00"
+
+# Version check and update logic
+# In archiso, the VERSION file is in the same directory as gxinstall
+VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
+def check_for_update():
+    import urllib.request
+    import shutil
+    import tempfile
+    import subprocess
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.text import Text
+    console = Console()
+    GITHUB_VERSION_URL = "https://raw.githubusercontent.com/GamerXECO-sys55/GX_Installer/main/VERSION"
+    GITHUB_REPO_URL = "https://github.com/GamerXECO-sys55/GX_Installer/archive/refs/heads/main.zip"
+    try:
+        # Fetch remote version
+        with urllib.request.urlopen(GITHUB_VERSION_URL, timeout=5) as response:
+            remote_version = response.read().decode().strip()
+    except Exception as e:
+        console.print(Panel(Text(f"[WARNING] Could not check for updates: {e}", style="bold yellow"), border_style="yellow"))
+        return
+    if remote_version > GXINSTALL_VERSION:
+        msg = Text(f"New Version {remote_version} is Available!", style="bold magenta on yellow")
+        msg2 = Text(f"Updating to {remote_version}...", style="bold cyan on black")
+        console.print(Panel(msg, border_style="bold green", title="[bold red]UPDATE"))
+        console.print(Panel(msg2, border_style="bold blue"))
+        # Download and extract new files
+        try:
+            tmpdir = tempfile.mkdtemp()
+            zip_path = os.path.join(tmpdir, "gxinstall-repo.zip")
+            with urllib.request.urlopen(GITHUB_REPO_URL, timeout=30) as response, open(zip_path, "wb") as out_file:
+                shutil.copyfileobj(response, out_file)
+                # Extract zip
+                import zipfile
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(tmpdir)
+                # Show extracted folder names for debugging
+                console.print(Panel(Text(f"Extracted contents: {os.listdir(tmpdir)}", style="bold yellow"), border_style="yellow"))
+                # Dynamically find extracted folder
+                import fnmatch
+                extracted_dir = None
+                found_dirs = []
+                for rootdir, dirs, files in os.walk(tmpdir):
+                    for d in dirs:
+                        full_path = os.path.join(rootdir, d)
+                        found_dirs.append(full_path)
+                        # Look for VERSION file in this directory
+                        if os.path.isfile(os.path.join(full_path, "VERSION")):
+                            extracted_dir = full_path
+                            break
+                    if extracted_dir:
+                        break
+                console.print(Panel(Text(f"[DEBUG] All found directories: {found_dirs}", style="bold yellow"), border_style="yellow"))
+                if not extracted_dir and found_dirs:
+                    # Fallback: just use the first directory found
+                    extracted_dir = found_dirs[0]
+                    console.print(Panel(Text(f"[WARNING] Using fallback extracted folder: {extracted_dir}", style="bold yellow"), border_style="yellow"))
+                if not extracted_dir:
+                    raise Exception(f"Could not find extracted repo directory! Found dirs: {found_dirs}")
+
+                # Make extracted_dir world-readable for the helper
+                import stat
+                
+                # Check if we need to go into usr/local/bin
+                bin_path = os.path.join(extracted_dir, "usr", "local", "bin")
+                if os.path.isdir(bin_path):
+                    console.print(Panel(Text(f"[DEBUG] Found usr/local/bin directory at: {bin_path}", style="bold yellow"), border_style="yellow"))
+                    extracted_dir = bin_path
+                else:
+                    console.print(Panel(Text(f"[WARNING] usr/local/bin not found in {extracted_dir}, using top-level", style="bold yellow"), border_style="yellow"))
+                
+                # Make everything readable
+                for root, dirs, files in os.walk(extracted_dir):
+                    os.chmod(root, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+                    for d in dirs:
+                        os.chmod(os.path.join(root, d), stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+                    for f in files:
+                        os.chmod(os.path.join(root, f), stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+
+                # Use update helper script to perform the update after this process exits
+                # Set repo_root to the directory containing this gxinstall script
+                repo_root = os.path.dirname(os.path.abspath(__file__))
+                helper_path = "/usr/local/bin/gxupdate_helper.py"
+                
+                # Debug: Print the directories being used
+                console.print(Panel(Text(
+                    f"[DEBUG] Using directories:\n"
+                    f"- Extracted dir: {extracted_dir}\n"
+                    f"- Repo root: {repo_root}\n"
+                    f"- Helper path: {helper_path}",
+                    style="bold yellow"
+                ), border_style="yellow"))
+                
+                # Verify the helper script exists and is executable
+                if not os.path.isfile(helper_path):
+                    raise FileNotFoundError(f"Helper script not found at {helper_path}")
+                if not os.access(helper_path, os.X_OK):
+                    os.chmod(helper_path, 0o755)  # Make it executable if it's not
+                
+                # Start the helper script
+                import subprocess
+                subprocess.Popen([
+                    "python3", 
+                    helper_path, 
+                    extracted_dir, 
+                    repo_root, 
+                    sys.argv[0]  # Path to the current script
+                ])
+                
+                console.print(Panel(
+                    Text(
+                        "Update downloaded. The installer will now exit so the update can be applied.\n"
+                        "Please re-run the installer in a few seconds!",
+                        style="bold green on black"
+                    ),
+                    border_style="bold green"
+                ))
+                sys.exit(0)
+        except Exception as e:
+            console.print(Panel(Text(f"[ERROR] Update failed: {e}", style="bold red"), border_style="red"))
+            sys.exit(1)
+    else:
+        # No update needed
+        return
+
+
+check_for_update()
+
+
+# Enhanced subprocess runner with logging
+def run_command_with_logging(cmd, check=True, capture_output=True, text=True, log_prefix=""):
+    """Run command with comprehensive logging"""
+    log(f"{log_prefix}Executing command: {' '.join(cmd)}")
+    try:
+        result = subprocess.run(cmd, check=check, capture_output=capture_output, text=text)
+        if result.stdout:
+            log(f"{log_prefix}STDOUT: {result.stdout}")
+        if result.stderr:
+            log(f"{log_prefix}STDERR: {result.stderr}")
+        log(f"{log_prefix}Command completed successfully (exit code: {result.returncode})")
+        return result
+    except subprocess.CalledProcessError as e:
+        log(f"{log_prefix}Command failed with exit code {e.returncode}", "ERROR")
+        if e.stdout:
+            log(f"{log_prefix}STDOUT: {e.stdout}")
+        if e.stderr:
+            log(f"{log_prefix}STDERR: {e.stderr}")
+        raise
+    except Exception as e:
+        log(f"{log_prefix}Command failed with exception: {e}", "ERROR")
+        raise
+
+# Example: Implement the Language menu logic
+def get_languages():
+    try:
+        langs = subprocess.check_output(['ls', '/usr/share/i18n/locales/']).decode().splitlines()
+        langs = [l for l in langs if l != 'POSIX']
+        return sorted(langs)
+    except Exception:
+        return ['en_US.UTF-8']
+
+def get_locales():
+    try:
+        with open('/etc/locale.gen') as f:
+            locales = [line.split()[0] for line in f if line.strip() and not line.startswith('#')]
+        if not locales:
+            with open('/usr/share/i18n/SUPPORTED') as f:
+                locales = [line.split()[0] for line in f if line.strip()]
+        return sorted(locales)
+    except Exception:
+        return ['en_US.UTF-8']
+
+def get_mirrors():
+    fallback = [
+        'https://mirror.rackspace.com/archlinux/$repo/os/$arch',
+        'https://mirrors.kernel.org/archlinux/$repo/os/$arch',
+        'https://archlinux.thaller.ws/$repo/os/$arch',
+        'https://mirror.archlinux.org/$repo/os/$arch',
+    ]
+    try:
+        with open('/etc/pacman.d/mirrorlist') as f:
+            mirrors = [line.strip().replace('Server = ', '') for line in f if line.startswith('Server')]
+        return mirrors[:50] if mirrors else fallback
+    except Exception:
+        return fallback
+
+def get_timezones():
+    zones = []
+    for root, dirs, files in os.walk('/usr/share/zoneinfo'):
+        for file in files:
+            path = os.path.relpath(os.path.join(root, file), '/usr/share/zoneinfo')
+            if not path.startswith(('posix', 'right', 'SystemV', 'Etc/')):
+                zones.append(path)
+    return sorted(zones)
+
+def call_disk_backend(args):
+    """Call the gx_disk.py backend and return parsed JSON output"""
+    import subprocess
+    import sys
+    import json
+    gx_disk_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gx_disk.py")
+    try:
+        result = subprocess.run([sys.executable, gx_disk_path] + args, capture_output=True, text=True)
+        output = result.stdout.strip()
+        if not output:
+            return {"status": "error", "message": "Disk backend error: No output returned."}
+        try:
+            return json.loads(output)
+        except json.JSONDecodeError:
+            return {"status": "error", "message": f"Disk backend error: Invalid JSON response: {output}"}
+    except Exception as e:
+        return {"status": "error", "message": f"Disk backend error: {e}"}
+
+# --- Restore custom ListView/ListItem highlighting ---
+ListView.HIGHLIGHT_STYLE = Style(bgcolor="cyan", color="black", bold=True)
+ListItem.HIGHLIGHT_STYLE = Style(bgcolor="cyan", color="black", bold=True)
+
+class LanguageScreen(Screen):
+    def compose(self) -> ComposeResult:
+        languages = get_languages()
+        yield Vertical(
+            Static(
+                Panel.fit(
+                    Text("Select your language:", style="bold cyan"),
+                    title="[bold magenta]Language Selection",
+                    border_style="bold magenta"
+                )
+            ),
+            VerticalScroll(
+                ListView(
+                    *[ListItem(Static(Text(lang, style="bold cyan")), id=f"lang_{i}") for i, lang in enumerate(languages)],
+                    id="language_list"
+                ),
+            ),
+            Center(Button("Back", id="back_btn"))
+        )
+
+    def on_mount(self):
+        self.query_one("#language_list").focus()
+
+    async def on_key(self, event):
+        if event.key == "enter":
+            list_view = self.query_one("#language_list")
+            selected_index = list_view.index
+            selected_lang = get_languages()[selected_index]
+            CONFIG['LANGUAGE'] = selected_lang
+            self.app.pop_screen()
+        elif event.key == "escape":
+            self.app.pop_screen()
+
+class LocaleScreen(Screen):
+    def compose(self) -> ComposeResult:
+        locales = get_locales()
+        yield Vertical(
+            Static(
+                Panel.fit(
+                    Text("Select your locale:", style="bold cyan"),
+                    title="[bold magenta]Locale Selection",
+                    border_style="bold magenta"
+                )
+            ),
+            VerticalScroll(
+                ListView(
+                    *[ListItem(Static(Text(locale, style="bold cyan")), id=f"locale_{i}") for i, locale in enumerate(locales)],
+                    id="locale_list"
+                ),
+            ),
+            Center(Button("Back", id="back_btn"))
+        )
+
+    def on_mount(self):
+        self.query_one("#locale_list").focus()
+
+    async def on_key(self, event):
+        if event.key == "enter":
+            list_view = self.query_one("#locale_list")
+            selected_index = list_view.index
+            selected_locale = get_locales()[selected_index]
+            CONFIG['LOCALE'] = selected_locale
+            self.app.pop_screen()
+        elif event.key == "escape":
+            self.app.pop_screen()
+
+class InfoScreen(Screen):
+    def __init__(self, title, icon, message, main_menu=False, delay=3, back_screen=None):
+        super().__init__()
+        self.title = title
+        self.icon = icon
+        self.message = message
+        self.main_menu = main_menu
+        self.delay = delay
+        self.back_screen = back_screen
+
+    async def on_mount(self):
+        self.mount(Center(
+            Static(
+                Panel.fit(
+                    Text(f"{self.icon}  {self.title}\n\n{self.message}", style="bold magenta"),
+                    title=f"[bold magenta]{self.title}",
+                    border_style="bold magenta"
+                )
+            ),
+            Center(Button("Back", id="back_btn"))
+        ))
+        if self.main_menu:
+            await asyncio.sleep(self.delay)
+            self.app.pop_screen()
+
+    def on_button_pressed(self, event):
+        if event.button.id == "back_btn":
+            self.app.pop_screen()
+
+class ProfileScreen(Screen):
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(
+                Panel.fit(
+                    Text("Select your profile:", style="bold cyan"),
+                    title="[bold magenta]Profile Selection",
+                    border_style="bold magenta"
+                )
+            ),
+            VerticalScroll(
+                ListView(
+                    *[ListItem(Static(Text(f"{icon} {name}", style="bold cyan")), id=f"profile_{i}") for i, (icon, name) in enumerate(PROFILE_OPTIONS)],
+                    id="profile_list"
+                ),
+            ),
+            Center(Button("Back", id="back_btn"))
+        )
+
+    def on_mount(self):
+        self.query_one("#profile_list").focus()
+
+    async def on_key(self, event):
+        if event.key == "enter":
+            list_view = self.query_one("#profile_list")
+            selected_index = list_view.index
+            selected_profile = PROFILE_OPTIONS[selected_index]
+            CONFIG['PROFILE'] = selected_profile[1]
+            self.app.pop_screen()
+        elif event.key == "escape":
+            self.app.pop_screen()
+
+class Welcome(Static):
+    def compose(self) -> ComposeResult:
+        yield Center(Static(Panel.fit(GAMERX_ASCII, title="[bold magenta]GAMERX Linux Installer", border_style="bold magenta")))
+        yield Center(Static(INFO_TEXT))
+
+class MainMenu(Static):
+    def compose(self) -> ComposeResult:
+        yield ListView(
+            *[ListItem(Static(Text(f"{icon}  {title}", style="bold cyan"))) for icon, title in MENU_TITLES],
+            id="main_menu"
+        )
+
+    async def on_key(self, event):
+        if event.key == "enter":
+            list_view = self.query_one("#main_menu")
+            idx = list_view.index
+            icon, title = MENU_TITLES[idx]
+            app = self.app
+            if title == "Exit":
+                app.push_screen(ExitScreen())
+            elif title == "Profile":
+                app.push_screen(ProfileScreen())
+            elif title == "Language":
+                app.push_screen(LanguageScreen())
+            elif title == "Locales":
+                app.push_screen(LocaleScreen())
+            elif title == "Mirrors":
+                app.push_screen(MirrorScreen())
+            elif title == "Swap":
+                app.push_screen(SwapScreen())
+            elif title == "User":
+                app.push_screen(UserScreen())
+            elif title == "Hostname":
+                app.push_screen(HostnameScreen())
+            elif title == "Kernels":
+                app.push_screen(KernelScreen())
+            elif title == "Additional Packages":
+                app.push_screen(AddPkgScreen())
+            elif title == "Timezone":
+                app.push_screen(TimezoneScreen())
+            elif title == "NTP":
+                app.push_screen(NTPScreen())
+            elif title == "Save":
+                app.push_screen(SaveScreen())
+            elif title == "Install":
+                # Validation before showing InstallScreen
+                required_fields = [
+                    ("LANGUAGE", "Language"),
+                    ("LOCALE", "Locales"),
+                    ("MIRROR", "Mirrors"),
+                    ("MOUNT_POINT", "Disk"),
+                    ("SWAP", "Swap"),
+                    ("USER", "User"),
+                    ("HOSTNAME", "Hostname"),
+                    ("PROFILE", "Profile"),
+                    ("KERNEL", "Kernels"),
+                    ("TIMEZONE", "Timezone"),
+                ]
+                missing_fields = []
+                for key, label in required_fields:
+                    if key not in CONFIG or not CONFIG[key]:
+                        missing_fields.append(label)
+                if missing_fields:
+                    app.push_screen(InfoScreen("Missing Option", "❌", f"Please select: {', '.join(missing_fields)}", back_screen=MainMenu()))
+                    return
+                # Extra validation for some fields
+                username_pattern = r'^[a-z_][a-z0-9_-]{0,31}$'
+                if not re.match(username_pattern, CONFIG['USER']):
+                    app.push_screen(InfoScreen("Invalid Username", "❌", "Username must be lowercase, start with a letter, and only use -, _.", back_screen=UserScreen()))
+                    return
+                if len(CONFIG['USER_PASS']) < 6:
+                    app.push_screen(InfoScreen("Weak Password", "❌", "Password must be at least 6 characters.", back_screen=UserScreen()))
+                    return
+                if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', CONFIG['HOSTNAME']):
+                    app.push_screen(InfoScreen("Invalid Hostname", "❌", "Invalid hostname (letters, numbers, '-', '_', max 63 chars).", back_screen=MainMenu()))
+                    return
+                # Immediately start installation, no confirmation screen
+                app.push_screen(InstallLogScreen(CONFIG))
+            elif title == "Disk":
+                app.push_screen(PreMountedScreen())
+            else:
+                app.push_screen(InfoScreen(title, icon, "This feature will be implemented soon!"))
+
+class MirrorScreen(Screen):
+    def compose(self) -> ComposeResult:
+        mirrors = get_mirrors()
+        yield Vertical(
+            Static(
+                Panel.fit(
+                    Text("Select your mirror:", style="bold cyan"),
+                    title="[bold magenta]Mirror Selection",
+                    border_style="bold magenta"
+                )
+            ),
+            VerticalScroll(
+                ListView(
+                    *[ListItem(Static(Text(mirror, style="bold cyan")), id=f"mirror_{i}") for i, mirror in enumerate(mirrors)],
+                    id="mirror_list"
+                ),
+            ),
+            Center(Button("Back", id="back_btn"))
+        )
+
+    def on_mount(self):
+        self.query_one("#mirror_list").focus()
+
+    async def on_key(self, event):
+        if event.key == "enter":
+            list_view = self.query_one("#mirror_list")
+            selected_index = list_view.index
+            selected_mirror = get_mirrors()[selected_index]
+            CONFIG['MIRROR'] = selected_mirror
+            self.app.pop_screen()
+        elif event.key == "escape":
+            self.app.pop_screen()
+
+SWAP_CHOICES = ["2G", "4G", "8G", "16G", "none"]
+
+class SwapScreen(Screen):
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(
+                Panel.fit(
+                    Text("Select swap size:", style="bold cyan"),
+                    title="[bold magenta]Swap Selection",
+                    border_style="bold magenta"
+                )
+            ),
+            VerticalScroll(
+                ListView(
+                    *[ListItem(Static(Text(choice, style="bold cyan")), id=f"swap_{i}") for i, choice in enumerate(SWAP_CHOICES)],
+                    id="swap_list"
+                ),
+            ),
+            Center(Button("Back", id="back_btn"))
+        )
+
+    def on_mount(self):
+        self.query_one("#swap_list").focus()
+
+    async def on_key(self, event):
+        if event.key == "enter":
+            list_view = self.query_one("#swap_list")
+            selected_index = list_view.index
+            selected_swap = SWAP_CHOICES[selected_index]
+            CONFIG['SWAP'] = selected_swap
+            self.app.pop_screen()
+        elif event.key == "escape":
+            self.app.pop_screen()
+
+class UserScreen(Screen):
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(
+                Panel.fit(
+                    Text("User Setup", style="bold cyan"),
+                    title="[bold magenta]User Setup",
+                    border_style="bold magenta"
+                )
+            ),
+            Input(placeholder="Username", id="username"),
+            Input(password=True, placeholder="Password", id="password"),
+            Input(password=True, placeholder="Confirm Password", id="password2"),
+            Checkbox(label="Grant sudo access", id="sudo"),
+            Button("Save", id="save_btn"),
+            Button("Back", id="back_btn")
+        )
+
+    def on_mount(self):
+        self.query_one("#username").focus()
+
+    def on_button_pressed(self, event):
+        if event.button.id == "back_btn":
+            self.app.pop_screen()
+        elif event.button.id == "save_btn":
+            username = self.query_one("#username").value
+            password = self.query_one("#password").value
+            password2 = self.query_one("#password2").value
+            sudo = self.query_one("#sudo").value
+            import re
+            # Username validation
+            username_pattern = r'^[a-z_][a-z0-9_-]{0,31}$'
+            if not username:
+                self.app.push_screen(InfoScreen("User Error", "❌", "Username cannot be empty.", back_screen=UserScreen()))
+                return
+            if not re.match(username_pattern, username):
+                self.app.push_screen(InfoScreen("User Error", "❌", "Invalid username. Use only lowercase letters, numbers, -, _.", back_screen=UserScreen()))
+                return
+            if not password:
+                self.app.push_screen(InfoScreen("User Error", "❌", "Password cannot be empty.", back_screen=UserScreen()))
+                return
+            if len(password) < 6:
+                self.app.push_screen(InfoScreen("User Error", "❌", "Password must be at least 6 characters.", back_screen=UserScreen()))
+                return
+            if password != password2:
+                self.app.push_screen(InfoScreen("User Error", "❌", "Passwords do not match.", back_screen=UserScreen()))
+                return
+            CONFIG['USER'] = username
+            CONFIG['USER_PASS'] = password
+            CONFIG['USER_SUDO'] = 'yes' if sudo else 'no'
+            self.app.pop_screen()
+
+class HostnameScreen(Screen):
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(
+                Panel.fit(
+                    Text("Enter hostname:", style="bold cyan"),
+                    title="[bold magenta]Hostname",
+                    border_style="bold magenta"
+                )
+            ),
+            Input(placeholder="Hostname", id="hostname"),
+            Button("Save", id="save_btn"),
+            Button("Back", id="back_btn")
+        )
+
+    def on_mount(self):
+        self.query_one("#hostname").focus()
+
+    def on_button_pressed(self, event):
+        import re
+        if event.button.id == "back_btn":
+            self.app.pop_screen()
+        elif event.button.id == "save_btn":
+            hostname = self.query_one("#hostname").value
+            if not hostname:
+                self.app.push_screen(InfoScreen("Hostname Error", "❌", "Hostname cannot be empty."))
+                return
+            if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', hostname):
+                self.app.push_screen(InfoScreen("Hostname Error", "❌", "Invalid hostname (letters, numbers, '-', '_', max 63 chars)."))
+                return
+            CONFIG['HOSTNAME'] = hostname
+            self.app.pop_screen()
+
+KERNEL_CHOICES = [
+    ("linux", "Linux (default)"),
+    ("linux-lts", "Linux LTS"),
+    ("linux-zen", "Linux Zen"),
+    ("linux-hardened", "Linux Hardened")
+]
+
+class KernelScreen(Screen):
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(
+                Panel.fit(
+                    Text("Select kernel:", style="bold cyan"),
+                    title="[bold magenta]Kernel Selection",
+                    border_style="bold magenta"
+                )
+            ),
+            VerticalScroll(
+                ListView(
+                    *[ListItem(Static(Text(f"{name}", style="bold cyan")), id=f"kernel_{i}") for i, (pkg, name) in enumerate(KERNEL_CHOICES)],
+                    id="kernel_list"
+                ),
+            ),
+            Center(Button("Back", id="back_btn"))
+        )
+
+    def on_mount(self):
+        self.query_one("#kernel_list").focus()
+
+    async def on_key(self, event):
+        if event.key == "enter":
+            list_view = self.query_one("#kernel_list")
+            selected_index = list_view.index
+            selected_kernel = KERNEL_CHOICES[selected_index]
+            CONFIG['KERNEL'] = selected_kernel[0]
+            self.app.pop_screen()
+        elif event.key == "escape":
+            self.app.pop_screen()
+
+class AddPkgScreen(Screen):
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(
+                Panel.fit(
+                    Text("Enter additional packages (space-separated):", style="bold cyan"),
+                    title="[bold magenta]Additional Packages",
+                    border_style="bold magenta"
+                )
+            ),
+            Input(placeholder="vim nano git", id="addpkgs"),
+            Button("Save", id="save_btn"),
+            Button("Back", id="back_btn")
+        )
+
+    def on_mount(self):
+        self.query_one("#addpkgs").focus()
+
+    def on_button_pressed(self, event):
+        if event.button.id == "back_btn":
+            self.app.pop_screen()
+        elif event.button.id == "save_btn":
+            pkgs = self.query_one("#addpkgs").value
+            CONFIG['ADDPKGS'] = pkgs
+            self.app.pop_screen()
+
+class TimezoneScreen(Screen):
+    def compose(self) -> ComposeResult:
+        zones = get_timezones()
+        yield Vertical(
+            Static(
+                Panel.fit(
+                    Text("Select timezone:", style="bold cyan"),
+                    title="[bold magenta]Timezone Selection",
+                    border_style="bold magenta"
+                )
+            ),
+            VerticalScroll(
+                ListView(
+                    *[ListItem(Static(Text(zone, style="bold cyan")), id=f"zone_{i}") for i, zone in enumerate(zones)],
+                    id="timezone_list"
+                ),
+            ),
+            Center(Button("Back", id="back_btn"))
+        )
+
+    def on_mount(self):
+        self.query_one("#timezone_list").focus()
+
+    async def on_key(self, event):
+        if event.key == "enter":
+            list_view = self.query_one("#timezone_list")
+            zones = get_timezones()
+            selected_index = list_view.index
+            selected_timezone = zones[selected_index]
+            CONFIG['TIMEZONE'] = selected_timezone
+            self.app.pop_screen()
+        elif event.key == "escape":
+            self.app.pop_screen()
+
+class NTPScreen(Screen):
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(
+                Panel.fit(
+                    Text("Enable Network Time Protocol (NTP)?", style="bold cyan"),
+                    title="[bold magenta]NTP",
+                    border_style="bold magenta"
+                )
+            ),
+            Checkbox(label="Enable NTP", id="ntp"),
+            Button("Save", id="save_btn"),
+            Button("Back", id="back_btn")
+        )
+
+    def on_mount(self):
+        self.query_one("#ntp").focus()
+
+    def on_button_pressed(self, event):
+        if event.button.id == "back_btn":
+            self.app.pop_screen()
+        elif event.button.id == "save_btn":
+            ntp = self.query_one("#ntp").value
+            CONFIG['NTP'] = 'enabled' if ntp else 'disabled'
+            self.app.pop_screen()
+
+class SaveScreen(Screen):
+    def compose(self) -> ComposeResult:
+        try:
+            with open('/tmp/gxinstall.conf', 'w') as f:
+                json.dump(CONFIG, f, indent=2)
+            msg = 'Configuration saved to /tmp/gxinstall.conf'
+            self.save_success = True
+        except Exception as e:
+            msg = f'Error saving config: {e}'
+            self.save_success = False
+        yield Vertical(
+            Static(
+                Panel.fit(
+                    Text(msg, style="bold green" if self.save_success else "bold red"),
+                    title="[bold magenta]Save Config",
+                    border_style="bold magenta"
+                )
+            ),
+            Center(Button("Back", id="back_btn"))
+        )
+
+    def on_button_pressed(self, event):
+        if event.button.id == "back_btn":
+            self.app.pop_screen()
+
+class InstallLogScreen(Screen):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.log_lines = []
+        self.install_done = False
+        self.success = False
+        self.error_msg = None
+        self.install_ready = False
+
+    # (Removed duplicate/async on_mount. Only keep the sync one below for UI setup.)
+
+    async def start_install(self):
+        await self.run_install()
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(Panel.fit(Text("Installation Progress", style="bold magenta"), title="[bold magenta]Install Log", border_style="bold magenta")),
+            VerticalScroll(Static("", id="log_area")),
+        )
+
+    def on_mount(self):
+        self.install_started = True
+        self.query_one("#log_area", Static).update("[yellow]Starting installation...[/yellow]")
+        # Schedule the async install to start after mount
+        self.set_timer(0, lambda: self.app.call_later(self.start_install))
+
+    # No button press handling needed: install starts automatically
+
+    async def run_install(self):
+        from asyncio.subprocess import PIPE, create_subprocess_exec
+        import shlex
+        import os
+        import subprocess
+        
+        root = self.config.get('MOUNT_POINT', '/mnt')
+        
+        # Step 1: Build full package list for pacstrap
+        base_pkgs = ['base', 'linux-firmware', 'sudo', 'nano', 'vim', 'python', 'python-pip', 'wget', 'git']
+        hyprland_pkgs = ['hyprland', 'waybar', 'wofi', 'swaybg', 'swaylock', 'grim', 'slurp', 'wl-clipboard', 'xdg-desktop-portal-hyprland']
+        kernel = self.config.get('KERNEL', 'linux')
+        if kernel and kernel not in base_pkgs:
+            base_pkgs.append(kernel)
+        if 'ADDPKGS' in self.config and self.config['ADDPKGS']:
+            addpkgs = shlex.split(self.config['ADDPKGS'])
+            base_pkgs.extend(addpkgs)
+        pkgs = base_pkgs + hyprland_pkgs
+        
+        self.log_lines.append(f"[INFO] Installing base system and packages: {' '.join(pkgs)}\n")
+        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        try:
+            # Try to install all packages, skipping any that fail
+            failed_pkgs = []
+            for pkg in pkgs:
+                proc = await create_subprocess_exec('pacstrap', root, pkg, stdout=PIPE, stderr=PIPE)
+                # Read and update logs in real time
+                while True:
+                    line = await proc.stdout.readline()
+                    if not line:
+                        break
+                    decoded = line.decode(errors="ignore")
+                    self.log_lines.append(decoded)
+                    self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+                    await self.refresh()  # Force TUI refresh for real-time logs
+                await proc.wait()
+                if proc.returncode != 0:
+                    self.log_lines.append(f"[WARNING] Failed to install package: {pkg}, skipping.\n")
+                    failed_pkgs.append(pkg)
+            if failed_pkgs:
+                self.log_lines.append(f"[WARNING] Some packages failed to install: {' '.join(failed_pkgs)}\n")
+            self.log_lines.append("[INFO] Base system and packages installed.\n")
+            self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+            # Step 2: Generate fstab
+            proc2 = await create_subprocess_exec('genfstab', '-U', root, stdout=PIPE)
+            fstab, _ = await proc2.communicate()
+            with open(f"{root}/etc/fstab", "wb") as f:
+                f.write(fstab)
+            self.log_lines.append("[INFO] fstab generated.\n")
+            self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        except Exception as e:
+            self.error_msg = str(e)
+            error_msg = f"[ERROR] Installation failed: {e}\n"
+            self.log_lines.append(error_msg)
+            self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+            self.install_done = True
+            await asyncio.sleep(1)
+            
+            # Safely handle the case where self.app might be None
+            if hasattr(self, 'app') and self.app is not None:
+                self.app.push_screen(FailScreen(self.error_msg))
+            else:
+                # If we can't push to the app, at least print the error
+                print(error_msg, file=sys.stderr)
+            return
+        # Step 3: Chroot and run post-install steps
+        self.log_lines.append("[INFO] Entering chroot for configuration...\n")
+        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        
+        # Escape single quotes in config values
+        def escape_single_quotes(s):
+            return str(s).replace("'", "'\\''") if s else ''
+            
+        chroot_script = f"""#!/bin/bash
+set -euo pipefail
+
+# Log function for chroot environment
+log() {{
+    echo "[CHROOT] $1"
+    logger -t gxinstall "$1"
+}}
+
+# Error handling
+error_exit() {{
+    log "ERROR: $1"
+    exit 1
+}}
+
+# Validate required variables
+if [ -z "{escape_single_quotes(self.config.get('DISK', ''))}" ]; then
+    error_exit "No disk specified for installation"
+fi
+
+# Set up locale and language
+setup_locale() {{
+    local lang='{escape_single_quotes(self.config.get('LANGUAGE', ''))}'
+    local locale='{escape_single_quotes(self.config.get('LOCALE', ''))}'
+    
+    if [ -n "$locale" ]; then
+        log "Setting up locale: $locale"
+        if ! grep -q "^$locale" /etc/locale.gen; then
+            error_exit "Locale $locale is not supported"
+        fi
+        sed -i "/^$locale/s/^#//" /etc/locale.gen || error_exit "Failed to enable locale $locale"
+        locale-gen || error_exit "Failed to generate locales"
+        echo "LANG=$locale" > /etc/locale.conf || error_exit "Failed to set system locale"
+    fi
+    
+    if [ -n "$lang" ]; then
+        echo "LANGUAGE=$lang" >> /etc/locale.conf
+    fi
+}}
+
+# Set up timezone
+setup_timezone() {{
+    local timezone='{escape_single_quotes(self.config.get('TIMEZONE', ''))}'
+    if [ -n "$timezone" ]; then
+        log "Setting timezone to $timezone"
+        if [ ! -f "/usr/share/zoneinfo/$timezone" ]; then
+            error_exit "Invalid timezone: $timezone"
+        fi
+        ln -sf "/usr/share/zoneinfo/$timezone" /etc/localtime || error_exit "Failed to set timezone"
+        hwclock --systohc || error_exit "Failed to sync hardware clock"
+    fi
+}}
+
+# Set up NTP
+setup_ntp() {{
+    local ntp='{escape_single_quotes(self.config.get('NTP', ''))}'
+    if [ "$ntp" = "enabled" ]; then
+        log "Enabling NTP"
+        systemctl enable systemd-timesyncd.service || error_exit "Failed to enable NTP"
+    fi
+}}
+
+# Set up hostname
+setup_hostname() {{
+    local hostname='{escape_single_quotes(self.config.get('HOSTNAME', 'gamerx-pc'))}'
+    if [ -n "$hostname" ]; then
+        log "Setting hostname to $hostname"
+        echo "$hostname" > /etc/hostname || error_exit "Failed to set hostname"
+        
+        # Update /etc/hosts
+        cat > /etc/hosts <<EOF
+127.0.0.1   localhost
+::1         localhost
+127.0.1.1   $hostname.localdomain $hostname
+EOF
+    fi
+}}
+
+# Create user account
+create_user() {{
+    local user='{escape_single_quotes(self.config.get('USER', ''))}'
+    local user_pass='{escape_single_quotes(self.config.get('USER_PASS', ''))}'
+    local user_sudo='{escape_single_quotes(self.config.get('USER_SUDO', ''))}'
+    
+    if [ -n "$user" ] && [ -n "$user_pass" ]; then
+        log "Creating user: $user"
+        if ! id "$user" &>/dev/null; then
+            # Create user with secure defaults
+            useradd -m -G wheel,audio,video,optical,storage,games,power,scanner,network,rfkill,sys -s /bin/bash "$user" ||
+                error_exit "Failed to create user $user"
+                
+            # Set password
+            echo "$user:$user_pass" | chpasswd || error_exit "Failed to set password for $user"
+            
+            # Set password expiration
+            passwd -n 30 -x 90 -w 7 "$user" || error_exit "Failed to set password policy for $user"
+            
+            # Configure sudo access
+            if [ "$user_sudo" = "yes" ]; then
+                log "Granting sudo access to $user"
+                if ! grep -q '^%wheel' /etc/sudoers; then
+                    echo '%wheel ALL=(ALL) ALL' > /etc/sudoers.d/10-wheel ||
+                        error_exit "Failed to configure sudo access"
+                    chmod 440 /etc/sudoers.d/10-wheel
+                fi
+            fi
+        else
+            log "User $user already exists, skipping creation"
+        fi
+    fi
+}}
+
+# Configure package manager
+configure_pacman() {{
+    local mirror='{escape_single_quotes(self.config.get('MIRROR', ''))}'
+    
+    # Update mirrorlist if specified
+    if [ -n "$mirror" ]; then
+        log "Configuring pacman mirror: $mirror"
+        if ! curl -s "$mirror" >/dev/null; then
+            error_exit "Mirror $mirror is not reachable"
+        fi
+        echo "Server = $mirror" > /etc/pacman.d/mirrorlist || error_exit "Failed to update mirrorlist"
+    fi
+    
+    # Configure pacman options
+    sed -i 's/^#ParallelDownloads = 5/ParallelDownloads = 5/' /etc/pacman.conf
+    sed -i 's/^#Color/Color/' /etc/pacman.conf
+    
+    # Initialize keyring
+    pacman-key --init || error_exit "Failed to initialize pacman keyring"
+    pacman-key --populate archlinux || error_exit "Failed to populate pacman keyring"
+}}
+
+# Install bootloader
+install_bootloader() {{
+    local disk='{escape_single_quotes(self.config.get('DISK', '/dev/sda'))}'
+    
+    # Verify disk exists and is a block device
+    if [ ! -b "$disk" ]; then
+        error_exit "Disk $disk is not a valid block device"
+    fi
+    
+    # Detect firmware interface type
+    if [ -d /sys/firmware/efi/efivars ]; then
+        log "Detected UEFI system. Installing UEFI bootloader..."
+        
+        # Install required packages
+        pacman -S --noconfirm grub efibootmgr os-prober || error_exit "Failed to install UEFI bootloader packages"
+        
+        # Install GRUB for UEFI
+        grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --recheck ||
+            error_exit "Failed to install GRUB for UEFI"
+            
+    else
+        log "Detected BIOS/Legacy system"
+        
+        # Check for GPT partition table
+        if parted -s "$disk" print | grep -q 'Partition Table: gpt'; then
+            log "Detected GPT partition table"
+            
+            # Check for BIOS boot partition
+            if ! sgdisk -p "$disk" | grep -q 'EF02'; then
+                error_exit "BIOS boot partition (type EF02) not found on GPT disk"
+            fi
+            
+            # Install GRUB for BIOS on GPT
+            pacman -S --noconfirm grub || error_exit "Failed to install GRUB packages"
+            grub-install --target=i386-pc "$disk" --recheck ||
+                error_exit "Failed to install GRUB for BIOS on GPT"
+                
+        else
+            log "Detected MBR partition table"
+            
+            # Install GRUB for BIOS on MBR
+            pacman -S --noconfirm grub || error_exit "Failed to install GRUB packages"
+            grub-install --target=i386-pc "$disk" --recheck ||
+                error_exit "Failed to install GRUB for BIOS on MBR"
+        fi
+    fi
+    
+    # Generate GRUB config
+    grub-mkconfig -o /boot/grub/grub.cfg || error_exit "Failed to generate GRUB configuration"
+    
+    # Install SDDM display manager
+    pacman -S --noconfirm sddm || error_exit "Failed to install SDDM"
+    systemctl enable sddm || error_exit "Failed to enable SDDM"
+}}
+
+# Main execution
+log "Starting chroot configuration"
+
+# Run setup functions
+setup_locale
+setup_timezone
+setup_ntp
+setup_hostname
+create_user
+configure_pacman
+install_bootloader
+
+log "Chroot configuration completed successfully"
+"""
+
+        # Install HyDE theme with better error handling
+        install_hyde_script = """
+        #!/bin/bash
+        set -euo pipefail
+        
+        log() {
+            echo "[HYDE] $1"
+            logger -t gxinstall-hyde "$1"
+        }
+        
+        error_exit() {
+            log "ERROR: $1"
+            exit 1
+        }
+        
+        # Install HyDE theme
+        install_hyde_theme() {
+            log "Installing HyDE theme..."
+            
+            # Install required packages
+            if ! pacman -S --needed --noconfirm git base-devel; then
+                log "WARNING: Failed to install required packages, but continuing..."
+            fi
+            
+            # Create a temporary directory with secure permissions
+            TEMP_DIR=$(mktemp -d -t hyde-XXXXXX)
+            if [ ! -d "$TEMP_DIR" ]; then
+                error_exit "Failed to create temporary directory"
+            fi
+            
+            # Set secure permissions
+            chmod 700 "$TEMP_DIR"
+            
+            # Function to clean up temporary files
+            cleanup() {
+                if [ -d "$TEMP_DIR" ]; then
+                    log "Cleaning up temporary files..."
+                    rm -rf "$TEMP_DIR"
+                fi
+            }
+            
+            # Ensure cleanup happens on exit
+            trap cleanup EXIT
+            
+            # Clone the repository
+            log "Cloning HyDE repository..."
+            if ! git clone https://github.com/GamerX-OS/HyDE "$TEMP_DIR/HyDE"; then
+                error_exit "Failed to clone HyDE repository"
+            fi
+            
+            # Change to the HyDE directory
+            cd "$TEMP_DIR/HyDE" || error_exit "Failed to change to HyDE directory"
+            
+            # Check if install script exists
+            if [ ! -f "Scripts/install.sh" ]; then
+                error_exit "HyDE install script not found"
+            fi
+            
+            # Make the install script executable
+            chmod +x "Scripts/install.sh"
+            
+            # Run the install script
+            log "Running HyDE installation script..."
+            if ! ./Scripts/install.sh; then
+                error_exit "HyDE installation script failed"
+            fi
+            
+            log "HyDE theme installation completed successfully"
+            return 0
+        }
+        
+        # Main execution
+        install_hyde_theme
+        """
+        
+        # Write HyDE installation script to a temporary file
+        with open(f"{root}/tmp/install_hyde.sh", "w") as f:
+            f.write(install_hyde_script)
+        os.chmod(f"{root}/tmp/install_hyde.sh", 0o755)
+        
+        # Execute HyDE installation in chroot
+        self.log_lines.append("[INFO] Installing HyDE theme...\n")
+        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        
+        hyde_proc = await create_subprocess_exec('arch-chroot', root, '/tmp/install_hyde.sh', 
+                                              stdout=PIPE, stderr=PIPE)
+        
+        if hyde_proc.stdout:
+            while True:
+                line = await hyde_proc.stdout.readline()
+                if not line:
+                    break
+                self.log_lines.append(line.decode())
+                self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        
+        await hyde_proc.wait()
+        
+        if hyde_proc.returncode != 0:
+            self.log_lines.append("[WARNING] HyDE theme installation completed with warnings\n")
+        else:
+            self.log_lines.append("[INFO] HyDE theme installation completed successfully\n")
+        
+        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        
+        # Clean up installation script
+        if os.path.exists(f"{root}/tmp/install_hyde.sh"):
+            os.remove(f"{root}/tmp/install_hyde.sh")
+        
+        # Install user-specific Hyprland theme
+        self.log_lines.append("[INFO] Installing user Hyprland theme...\n")
+        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        
+        # Create user theme directory
+        theme_dir = f"{root}/home/{self.config.get('USER', '')}/.themes"
+        os.makedirs(theme_dir, exist_ok=True)
+        os.chown(theme_dir, int(self.config.get('USER_ID', 1000)), int(self.config.get('USER_GID', 1000)))
+        
+        # Clone user theme
+        user_theme_cmd = [
+            'arch-chroot', root, 'runuser', '-u', self.config.get('USER', ''),
+            '--', 'git', 'clone', '--depth=1',
+            'https://github.com/GamerXECO-sys55/Hyprland_GX_theme',
+            f"/home/{self.config.get('USER', '')}/HyDE"
+        ]
+        
+        try:
+            await run_command_with_logging(user_theme_cmd, log_prefix="[USER_THEME] ")
+            
+            # Install user theme
+            install_cmd = [
+                'arch-chroot', root, 'runuser', '-u', self.config.get('USER', ''),
+                '--', 'bash', '-c', 
+                f'cd /home/{self.config.get("USER", "")}/HyDE/Scripts && ./install.sh'
+            ]
+            await run_command_with_logging(install_cmd, log_prefix="[USER_THEME_INSTALL] ")
+            
+            self.log_lines.append("[INFO] User theme installation completed\n")
+        except Exception as e:
+            self.log_lines.append(f"[WARNING] User theme installation failed: {e}\n")
+        
+        # Install yay from AUR as user
+        self.log_lines.append("[INFO] Installing yay from AUR...\n")
+        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        
+        yay_cmds = [
+            (['arch-chroot', root, 'runuser', '-u', self.config.get('USER', ''), '--', 'git', 'clone', 'https://aur.archlinux.org/yay.git', f'/home/{self.config.get("USER", "")}/yay'], "Cloning yay..."),
+            (['chown', '-R', f'{self.config.get("USER", "")}:{self.config.get("USER", "")}', f'/home/{self.config.get("USER", "")}/yay'], "Setting permissions..."),
+            (['arch-chroot', root, 'runuser', '-u', self.config.get('USER', ''), '--', 'bash', '-c', f'cd /home/{self.config.get("USER", "")}/yay && makepkg -si --noconfirm'], "Building yay...")
+        ]
+        
+        for cmd, desc in yay_cmds:
+            try:
+                self.log_lines.append(f"[INFO] {desc}\n")
+                self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+                proc = await create_subprocess_exec(*cmd, stdout=PIPE, stderr=PIPE)
+                
+                if proc.stdout:
+                    while True:
+                        line = await proc.stdout.readline()
+                        if not line:
+                            break
+                        self.log_lines.append(line.decode())
+                        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+                
+                await proc.wait()
+                if proc.returncode != 0:
+                    raise Exception(f"Command failed with exit code {proc.returncode}")
+                    
+            except Exception as e:
+                self.log_lines.append(f"[WARNING] Failed to {desc.lower()}: {e}\n")
+                self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+                break
+                
+        # Install profile-specific packages
+        self.log_lines.append("[INFO] Installing profile-specific packages...\n")
+        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        
+        profile = self.config.get('PROFILE', 'GamerX Hyprland')
+        installer_script = {
+            'GamerX Hyprland': 'install_hyprland.sh',
+            'GamerX Hyprland+Gaming': 'install_gaming.sh',
+            'GamerX Hyprland+Hacking': 'install_hacking.sh'
+        }.get(profile, 'install_hyprland.sh')
+        
+        profile_install_cmd = [
+            'arch-chroot', root, 'bash', '-c',
+            f'cp /usr/local/bin/Installer/{installer_script} /tmp/installer.sh && '
+            'chmod +x /tmp/installer.sh && '
+            '/tmp/installer.sh'
+        ]
+        
+        try:
+            await run_command_with_logging(profile_install_cmd, log_prefix="[PROFILE_INSTALL] ")
+            self.log_lines.append(f"[INFO] Successfully installed {profile} profile\n")
+        except Exception as e:
+            self.log_lines.append(f"[WARNING] Failed to install profile {profile}: {e}\n")
+        
+        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        
+        # Final cleanup
+        cleanup_cmds = [
+            (['rm', '-f', f"{root}/tmp/installer.sh"], "Cleaning up temporary files..."),
+            (['rm', '-f', f"{root}/tmp/gx_chroot.sh"], "Removing chroot script...")
+        ]
+        
+        for cmd, desc in cleanup_cmds:
+            try:
+                proc = await create_subprocess_exec(*cmd)
+                await proc.wait()
+            except Exception as e:
+                self.log_lines.append(f"[WARNING] {desc} failed: {e}\n")
+                
+        self.log_lines.append("[INFO] Installation process completed successfully!\n")
+        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        
+        # Add post-install cleanup for .gnupg
+        chroot_script += '\n# Cleanup .gnupg folders (if exist)\nrm -rf /root/.gnupg /home/*/.gnupg || true\n'
+        # Write chroot script to /tmp and execute in chroot
+        with open(f"{root}/tmp/gx_chroot.sh", "w") as f:
+            f.write(chroot_script)
+        os.chmod(f"{root}/tmp/gx_chroot.sh", 0o755)
+        self.log_lines.append("[INFO] Running post-install configuration in chroot...\n")
+        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        proc = await create_subprocess_exec('arch-chroot', root, '/tmp/gx_chroot.sh', stdout=PIPE, stderr=PIPE)
+        if proc.stdout is not None:
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                self.log_lines.append(line.decode())
+                self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+            await proc.wait()
+        self.log_lines.append("[INFO] Post-install configuration complete.\n")
+        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+        await asyncio.sleep(1)
+        self.app.push_screen(SuccessScreen())
+
+class SuccessScreen(Screen):
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(Panel.fit(Text("GamerX Linux Installed Successfully!", style="bold green"), title="[bold green]Success!", border_style="bold green")),
+            Center(Button("Go into chroot", id="chroot_btn")),
+            Center(Button("Exit", id="exit_btn"))
+        )
+    def on_button_pressed(self, event):
+        if event.button.id == "chroot_btn":
+            os.system(f"arch-chroot {CONFIG.get('MOUNT_POINT', '/mnt')} /bin/bash")
+        elif event.button.id == "exit_btn":
+            self.app.exit()
+
+class FailScreen(Screen):
+    def __init__(self, error_msg):
+        super().__init__()
+        self.error_msg = error_msg
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(Panel.fit(Text(f"Installation failed:\n{self.error_msg}", style="bold red"), title="[bold red]Install Failed", border_style="bold red")),
+            Center(Button("Retry", id="retry_btn")),
+            Center(Button("Exit", id="exit_btn"))
+        )
+    def on_button_pressed(self, event):
+        if event.button.id == "exit_btn":
+            self.app.exit()
+        elif event.button.id == "retry_btn":
+            self.app.pop_screen()
+            # Optionally, reload last config or go to main menu
+
+# InstallScreen removed: install starts immediately from main menu
+
+class ExitScreen(Screen):
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(
+                Panel.fit(
+                    Text("Are you sure you want to exit?", style="bold red"),
+                    title="[bold magenta]Exit",
+                    border_style="bold magenta"
+                )
+            ),
+            Button("Yes", id="yes_btn"),
+            Button("No", id="no_btn")
+        )
+
+    def on_mount(self):
+        self.query_one("#yes_btn").focus()
+
+    def on_button_pressed(self, event):
+        if event.button.id == "yes_btn":
+            self.app.exit()
+        elif event.button.id == "no_btn":
+            self.app.pop_screen()
+
+class PreMountedScreen(Screen):
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(Text("Enter the mount point for your pre-mounted root (e.g. /mnt):", style="bold cyan")),
+            Input(placeholder="/mnt", id="manual_mount"),
+            Center(Button("Confirm", id="manual_btn"))
+        )
+
+    def on_mount(self):
+        self.query_one("#manual_mount").focus()
+
+    def on_button_pressed(self, event):
+        if event.button.id == "manual_btn":
+            mp = self.query_one("#manual_mount").value
+            if mp:
+                CONFIG['DISK_METHOD'] = 'pre-mount'
+                CONFIG['MOUNT_POINT'] = mp
+                self.app.pop_screen()
+            else:
+                self.app.push_screen(ResultScreen("error", "No mount point entered."))
+
+class ResultScreen(Screen):
+    def __init__(self, status, message, main_menu=False):
+        super().__init__()
+        self.status = status
+        self.message = message
+        self.main_menu = main_menu
+
+    async def on_mount(self):
+        style = "bold green" if self.status == "success" else "bold red"
+        self.mount(Vertical(
+            Static(Text(self.message, style=style)),
+            Center(Button("Confirm", id="confirm_btn"))
+        ))
+        if self.main_menu:
+            await asyncio.sleep(3)
+            # Go back to main menu by popping all screens until we reach it
+            # Note: In Textual, we need to pop screens one by one
+            # The main menu is typically the first screen after the initial screen
+            self.app.pop_screen()
+            self.app.pop_screen()
+
+    def on_button_pressed(self, event):
+        if event.button.id == "confirm_btn":
+            self.app.pop_screen()
+            if self.main_menu:
+                self.app.pop_screen()
+
+def run_gx_install():
+    import shlex
+    import subprocess
+    import os
+    import time
+    root = CONFIG.get('MOUNT_POINT', '/mnt')
+    # Build full package list
+    base_pkgs = ['base', 'linux-firmware', 'sudo', 'nano', 'vim', 'python', 'python-pip', 'wget', 'git']
+    hyprland_pkgs = ['hyprland', 'waybar', 'wofi', 'swaybg', 'swaylock', 'grim', 'slurp', 'wl-clipboard', 'xdg-desktop-portal-hyprland']
+    kernel = CONFIG.get('KERNEL', 'linux')
+    if kernel and kernel not in base_pkgs:
+        base_pkgs.append(kernel)
+    if 'ADDPKGS' in CONFIG and CONFIG['ADDPKGS']:
+        addpkgs = shlex.split(CONFIG['ADDPKGS'])
+        base_pkgs.extend(addpkgs)
+    pkgs = base_pkgs + hyprland_pkgs
+    print(f"[INFO] Installing base system and packages: {' '.join(pkgs)}")
+    failed_pkgs = []
+    for pkg in pkgs:
+        try:
+            subprocess.run(['pacstrap', root, pkg], check=True)
+        except subprocess.CalledProcessError:
+            print(f"[WARNING] Failed to install package: {pkg}, skipping.")
+            failed_pkgs.append(pkg)
+    if failed_pkgs:
+        print(f"[WARNING] Some packages failed to install: {' '.join(failed_pkgs)}")
+    print("[INFO] Base system and packages installed.")
+    # Generate fstab
+    fstab = subprocess.check_output(['genfstab', '-U', root])
+    with open(f"{root}/etc/fstab", "wb") as f:
+        f.write(fstab)
+    print("[INFO] fstab generated.")
+    # Write chroot post-install script
+    lang = self.config.get('LANGUAGE', '')
+    locale = self.config.get('LOCALE', '')
+    timezone = self.config.get('TIMEZONE', 'UTC')
+    ntp = self.config.get('NTP', 'disabled')
+    hostname = self.config.get('HOSTNAME', 'gamerx-pc')
+    user = self.config.get('USER', '')
+    user_pass = self.config.get('USER_PASS', '')
+    user_sudo = self.config.get('USER_SUDO', 'no')
+    mirror = self.config.get('MIRROR', '')
+    disk = self.config.get('DISK', '/dev/sda')
+    
+    # Escape single quotes in variables
+    def escape_single_quotes(s):
+        return str(s).replace("'", "'\\''") if s else ''
+    
+    # Escape all variables
+    lang_esc = escape_single_quotes(lang)
+    locale_esc = escape_single_quotes(locale)
+    timezone_esc = escape_single_quotes(timezone)
+    ntp_esc = escape_single_quotes(ntp)
+    hostname_esc = escape_single_quotes(hostname)
+    user_esc = escape_single_quotes(user)
+    user_pass_esc = escape_single_quotes(user_pass)
+    user_sudo_esc = escape_single_quotes(user_sudo)
+    mirror_esc = escape_single_quotes(mirror)
+    disk_esc = escape_single_quotes(disk)
+    
+    # Create the chroot script with simplified error handling
+    # Build the chroot script line by line to avoid syntax issues
+    chroot_script_lines = [
+        "#!/bin/bash",
+        "# Set basic error handling",
+        "set -e",
+        "",
+        "# Language and Locale",
+        f"lang='{lang_esc}'",
+        f"locale='{locale_esc}'",
+        "",
+        "echo \"[INFO] Configuring locale...\"",
+        'if [ -n "$locale" ]; then',
+        '  sed -i "/^$locale/s/^#//" /etc/locale.gen',
+        '  locale-gen',
+        '  echo "LANG=$locale" > /etc/locale.conf',
+        'fi',
+        'if [ -n "$lang" ]; then',
+        '  echo "LANGUAGE=$lang" >> /etc/locale.conf',
+        'fi',
+        "",
+        "# Timezone",
+        f"timezone='{timezone_esc}'",
+        'echo "[INFO] Setting timezone to $timezone..."',
+        'if [ -n "$timezone" ]; then',
+        '  ln -sf "/usr/share/zoneinfo/$timezone" /etc/localtime',
+        '  hwclock --systohc',
+        '  echo "$timezone" > /etc/timezone',
+        'fi',
+        "",
+        "# NTP",
+        f"ntp='{ntp_esc}'",
+        'echo "[INFO] Configuring NTP..."',
+        'if [ "$ntp" = "enabled" ]; then',
+        '  systemctl enable systemd-timesyncd.service',
+        '  systemctl start systemd-timesyncd.service',
+        'fi',
+        "",
+        "# Hostname",
+        f"hostname='{hostname_esc}'",
+        'echo "[INFO] Setting hostname to $hostname..."',
+        'if [ -n "$hostname" ]; then',
+        '  echo "$hostname" > /etc/hostname',
+        '  ',
+        '  # Update /etc/hosts',
+        '  cat > /etc/hosts <<EOF',
+        '127.0.0.1   localhost',
+        '::1         localhost',
+        '127.0.1.1   $hostname.localdomain $hostname',
+        'EOF',
+        'fi'
+    ]
+    
+    # Join the lines with newlines
+    chroot_script = '\n'.join(chroot_script_lines)
+    
+    # Format the script with the variables
+    chroot_script = chroot_script.format(
+        lang_esc=lang_esc,
+        locale_esc=locale_esc,
+        timezone_esc=timezone_esc,
+        ntp_esc=ntp_esc,
+        hostname_esc=hostname_esc
+    )
+    
+    # Add user setup section
+    user_setup_script = """
+# User Setup
+echo "[INFO] Setting up user account..."
+user='{user_esc}'
+user_pass='{user_pass_esc}'
+user_sudo='{user_sudo_esc}'
+
+if [ -n "$user" ] && [ -n "$user_pass" ]; then
+  if ! id "$user" &>/dev/null; then
+    echo "[INFO] Creating user $user..."
+    # Create user with proper groups
+    useradd -m -G wheel,audio,video,optical,storage,games,power,scanner,network,rfkill,sys -s /bin/bash "$user" || {{{{ echo "[ERROR] Failed to create user $user"; exit 1; }}}}
+    
+    # Set password
+    echo "[INFO] Setting password for user $user..."
+    echo "$user:$user_pass" | chpasswd || {{{{ echo "[ERROR] Failed to set password"; exit 1; }}}}
+    
+    # Set password policy
+    echo "[INFO] Setting password policy..."
+    passwd -n 30 -x 90 -w 7 "$user" || echo "[WARNING] Failed to set password policy"
+    
+    # Configure sudo access
+    if [ "$user_sudo" = "yes" ]; then
+      echo "[INFO] Configuring sudo access..."
+      if ! grep -q '^%wheel' /etc/sudoers; then
+        echo '%wheel ALL=(ALL) ALL' > /etc/sudoers.d/10-wheel || {{{{ echo "[ERROR] Failed to configure sudo"; exit 1; }}}}
+        chmod 440 /etc/sudoers.d/10-wheel
+      fi
+    fi
+  else
+    echo "[INFO] User $user already exists, skipping creation"
+  fi
+fi
+""".format(
+        user_esc=user_esc,
+        user_pass_esc=user_pass_esc,
+        user_sudo_esc=user_sudo_esc
+    )
+    
+    # Add mirrorlist section
+    mirrorlist_script = """
+# Mirrorlist
+echo "[INFO] Configuring mirrorlist..."
+mirror='{mirror_esc}'
+if [ -n "$mirror" ]; then
+  if curl -s "$mirror" &>/dev/null; then
+    echo "Server = $mirror" > /etc/pacman.d/mirrorlist
+    echo "[INFO] Using mirror: $mirror"
+  else
+    echo "[WARNING] Mirror $mirror is not reachable, using default mirrors"
+  fi
+fi
+""".format(
+        mirror_esc=mirror_esc
+    )
+    
+    # Add bootloader section
+    bootloader_script = """
+# Disk for bootloader
+echo "[INFO] Detecting disk for bootloader installation..."
+root_disk='{disk_esc}'
+disk=$(lsblk -npo PKNAME $(findmnt -n -o SOURCE /) | tail -1)
+if [ -z "$disk" ]; then
+  disk="$root_disk"
+  echo "[WARNING] Could not detect root disk, using configured disk: $disk"
+fi
+
+# Helper to check if disk is GPT and has BIOS Boot Partition
+echo "[INFO] Checking disk partition table..."
+gpt_check="$(parted -s $disk print | grep -i 'Partition Table:' | grep -i 'gpt')"
+ef02_check="$(sgdisk -p $disk | grep -i 'EF02')"
+
+# Install bootloader
+echo "[INFO] Installing bootloader..."
+if [ -d /sys/firmware/efi/efivars ]; then
+  echo "[INFO] Detected UEFI system. Installing UEFI GRUB..."
+  pacman -S --noconfirm grub efibootmgr os-prober
+  grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --recheck
+  grub-mkconfig -o /boot/grub/grub.cfg
+elif [ -n "$gpt_check" ]; then
+  # BIOS/Legacy on GPT
+  if [ -n "$ef02_check" ]; then
+    echo "[INFO] Detected BIOS/Legacy system on GPT with BIOS Boot Partition. Installing BIOS GRUB..."
+    pacman -S --noconfirm grub
+    grub-install --target=i386-pc $disk --recheck
+    grub-mkconfig -o /boot/grub/grub.cfg
+  else
+    echo "[WARNING] BIOS/Legacy boot on GPT requires a BIOS Boot Partition (type EF02). Skipping BIOS GRUB install."
+  fi
+else
+  # BIOS/Legacy on MBR
+  echo "[INFO] Detected BIOS/Legacy system on MBR. Installing BIOS GRUB..."
+  pacman -S --noconfirm grub
+""".format(
+        disk_esc=disk_esc
+    )
+    
+    # Add MBR bootloader installation commands
+    mbr_bootloader_script = """
+  grub-install --target=i386-pc $disk --recheck
+  grub-mkconfig -o /boot/grub/grub.cfg
+fi
+
+# Install SDDM"""
+    
+    # Add SDDM and HyDE installation
+    sddm_hyde_script = """
+# Install SDDM
+echo "[INFO] Installing SDDM display manager..."
+pacman -S --noconfirm sddm
+systemctl enable sddm
+
+# Install HyDE theme (now user exists)
+echo "[INFO] Installing HyDE theme..."
+pacman -S --needed --noconfirm git base-devel
+# Clone HyDE to user's home directory
+echo "[INFO] Cloning HyDE theme..."
+su - "$user" -c "git clone https://github.com/GamerXECO-sys55/Hyprland_GX_theme ~/HyDE"
+# Run HyDE installation as user
+echo "[INFO] Running HyDE installation..."
+"""
+    
+    # Add yay and profile installation script
+    yay_profile_script = """
+# Run HyDE installation
+su - "$user" -c "cd ~/HyDE/Scripts && ./install.sh"
+
+# Install yay from AUR as user
+echo "[INFO] Installing yay from AUR..."
+su - "$user" -c "cd /tmp && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"
+
+# Call profile installer
+echo "[INFO] Installing selected profile..."
+profile='{profile_esc}'
+if [ "$profile" = "GamerX Hyprland" ]; then
+  cp /usr/local/bin/Installer/install_hyprland.sh /tmp/installer.sh
+  chmod +x /tmp/installer.sh
+  /tmp/installer.sh
+elif [ "$profile" = "GamerX Hyprland+Gaming" ]; then
+  cp /usr/local/bin/Installer/install_gaming.sh /tmp/installer.sh
+  chmod +x /tmp/installer.sh
+  /tmp/installer.sh
+elif [ "$profile" = "GamerX Hyprland+Hacking" ]; then
+  cp /usr/local/bin/Installer/install_hacking.sh /tmp/installer.sh
+  chmod +x /tmp/installer.sh
+  /tmp/installer.sh
+fi
+""".format(
+        profile_esc=self.config.get('PROFILE', 'GamerX Hyprland')
+    )
+    
+    # Combine all scripts
+    chroot_script = chroot_script + user_setup_script + mirrorlist_script + bootloader_script + mbr_bootloader_script + sddm_hyde_script + yay_profile_script
+    
+    # Format the final script with all variables
+    chroot_script = chroot_script.format(
+        user_esc=user_esc,
+        user_pass_esc=user_pass_esc,
+        user_sudo_esc=user_sudo_esc,
+        mirror_esc=mirror_esc,
+        disk_esc=disk_esc,
+        profile_esc=self.config.get('PROFILE', 'GamerX Hyprland')
+    )
+
+    with open(f"{root}/tmp/gx_chroot.sh", "w") as f:
+        f.write(chroot_script)
+    os.chmod(f"{root}/tmp/gx_chroot.sh", 0o755)
+    print("[INFO] Running post-install configuration in chroot...")
+    subprocess.run(['arch-chroot', root, '/tmp/gx_chroot.sh'], check=True)
+    print("[INFO] Post-install configuration complete.")
+
+class GXInstallApp(App):
+    CSS_PATH = None
+    BINDINGS = [
+        ("q", "quit", "Quit"),
+        ("up", "cursor_up", "Up"),
+        ("down", "cursor_down", "Down"),
+        ("enter", "select", "Select"),
+        ("escape", "back", "Back")
+    ]
+    selected_option = reactive(0)
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Vertical(Welcome(), MainMenu())
+        yield Footer()
+
+    def on_mount(self):
+        self.query_one("#main_menu").focus()
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--run-install":
+        # Load config and run install directly (no TUI)
+        with open("/tmp/gxinstall.conf") as f:
+            config = json.load(f)
+        # Use the same logic as InstallLogScreen.run_install, but print to terminal
+        import shlex
+        import subprocess
+        import os
+        
+        root = config.get('MOUNT_POINT', '/mnt')
+        
+        # Step 1: Install base Arch + basic packages
+        log("Starting base system installation")
+        base_pkgs = ['base', 'linux-firmware', 'sudo', 'nano', 'vim', 'python', 'python-pip', 'wget', 'git']
+        kernel = config.get('KERNEL', 'linux')
+        if kernel and kernel not in base_pkgs:
+            base_pkgs.append(kernel)
+        if 'ADDPKGS' in config and config['ADDPKGS']:
+            addpkgs = shlex.split(config['ADDPKGS'])
+            base_pkgs.extend(addpkgs)
+        log(f"Base packages to install: {base_pkgs}")
+        try:
+            run_command_with_logging(['pacstrap', root] + base_pkgs, log_prefix="[PACSTRAP] ")
+            log("Base system installed successfully")
+            # Step 2: Generate fstab
+            log("Generating fstab")
+            fstab = subprocess.check_output(['genfstab', '-U', root])
+            with open(f"{root}/etc/fstab", "wb") as fstab_file:
+                fstab_file.write(fstab)
+            log("fstab generated successfully")
+            
+            # Step 3: Create user FIRST (before any user-level installs)
+            log("Starting user creation")
+            user = config.get('USER', 'gamerx')
+            user_pass = config.get('USER_PASS', 'gamerx')
+            user_sudo = config.get('USER_SUDO', 'yes')
+            log(f"Creating user: {user} with sudo: {user_sudo}")
+            if user and user_pass:
+                try:
+                    run_command_with_logging(['arch-chroot', root, 'useradd', '-m', '-G', 'wheel', user], log_prefix="[USERADD] ")
+                    run_command_with_logging(['arch-chroot', root, 'bash', '-c', f'echo "{user}:{user_pass}" | chpasswd'], log_prefix="[CHPASSWD] ")
+                    if user_sudo == 'yes':
+                        run_command_with_logging(['arch-chroot', root, 'sed', '-i', 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/', '/etc/sudoers'], log_prefix="[SUDOERS] ")
+                    log(f"User {user} created successfully")
+                except Exception as e:
+                    log(f"Failed to create user: {e}", "ERROR")
+            
+            # Step 4: Install Hyprland & its packages
+            log("Starting Hyprland packages installation")
+            hyprland_pkgs = ['hyprland', 'waybar', 'wofi', 'swaybg', 'swaylock', 'grim', 'slurp', 'wl-clipboard', 'xdg-desktop-portal-hyprland']
+            log(f"Hyprland packages to install: {hyprland_pkgs}")
+            run_command_with_logging(['arch-chroot', root, 'pacman', '-S', '--noconfirm'] + hyprland_pkgs, log_prefix="[HYPRLAND] ")
+            log("Hyprland packages installed successfully")
+            
+            # Step 5: Install grub, sddm configs
+            log("Starting GRUB and SDDM installation")
+            disk = config.get('DISK', '/dev/sda')
+            log(f"Target disk: {disk}")
+            # Detect UEFI or BIOS
+            is_uefi = os.path.exists(f"{root}/sys/firmware/efi")
+            log(f"UEFI detection: {is_uefi}")
+            if is_uefi:
+                log("Detected UEFI system. Installing UEFI GRUB...")
+                run_command_with_logging(['arch-chroot', root, 'pacman', '-S', '--noconfirm', 'grub', 'efibootmgr', 'sddm'], log_prefix="[GRUB_UEFI_PKG] ")
+                run_command_with_logging(['arch-chroot', root, 'systemctl', 'enable', 'sddm'], log_prefix="[SDDM_ENABLE] ")
+                try:
+                    run_command_with_logging(['arch-chroot', root, 'grub-install', '--target=x86_64-efi', '--efi-directory=/boot/efi', '--bootloader-id=GRUB', '--recheck'], log_prefix="[GRUB_INSTALL_UEFI] ")
+                    log("GRUB UEFI installed successfully")
+                except Exception as e:
+                    log(f"UEFI GRUB install failed: {e}", "ERROR")
+            else:
+                log("Detected BIOS/Legacy system. Installing BIOS GRUB...")
+                run_command_with_logging(['arch-chroot', root, 'pacman', '-S', '--noconfirm', 'grub', 'sddm'], log_prefix="[GRUB_BIOS_PKG] ")
+                run_command_with_logging(['arch-chroot', root, 'systemctl', 'enable', 'sddm'], log_prefix="[SDDM_ENABLE] ")
+                try:
+                    run_command_with_logging(['arch-chroot', root, 'grub-install', '--target=i386-pc', disk, '--recheck'], log_prefix="[GRUB_INSTALL_BIOS] ")
+                    log("GRUB BIOS installed successfully")
+                except Exception as e:
+                    log(f"BIOS GRUB install failed: {e}", "ERROR")
+            # Generate GRUB config
+            try:
+                run_command_with_logging(['arch-chroot', root, 'grub-mkconfig', '-o', '/boot/grub/grub.cfg'], log_prefix="[GRUB_CONFIG] ")
+                log("GRUB config generated successfully")
+            except Exception as e:
+                log(f"GRUB config failed: {e}", "ERROR")
+                
+            # Step 6: Create Hyprland session file
+            try:
+                session_dir = f"{root}/usr/share/wayland-sessions"
+                os.makedirs(session_dir, exist_ok=True)
+                with open(f"{session_dir}/hyprland.desktop", "w") as f:
+                    f.write("[Desktop Entry]\n")
+                    f.write("Name=Hyprland\n")
+                    f.write("Comment=Hyprland Wayland Compositor\n")
+                    f.write("Exec=Hyprland\n")
+                    f.write("Type=Application\n")
+                    f.write("DesktopNames=Hyprland\n")
+                print("[INFO] Hyprland session file created.")
+            except Exception as e:
+                print(f"[WARNING] Hyprland session file failed: {e}")
+                
+            # Step 7: Install HyDE theme (now user exists)
+            log("Starting HyDE theme installation (skipping detailed logging as requested)")
+            try:
+                run_command_with_logging(['arch-chroot', root, 'pacman', '-S', '--needed', '--noconfirm', 'git', 'base-devel'], log_prefix="[HYDE_DEPS] ")
+                # Clone HyDE to user's home directory
+                run_command_with_logging(['arch-chroot', root, 'bash', '-c', f'su - {user} -c "git clone https://github.com/GamerXECO-sys55/Hyprland_GX_theme ~/HyDE"'], log_prefix="[HYDE_CLONE] ")
+                # Run HyDE installation as user
+                run_command_with_logging(['arch-chroot', root, 'bash', '-c', f'su - {user} -c "cd ~/HyDE/Scripts && ./install.sh"'], log_prefix="[HYDE_INSTALL] ")
+                log("HyDE theme installed successfully")
+            except Exception as e:
+                log(f"HyDE theme installation failed: {e}", "ERROR")
+                
+            # Step 8: Install yay from AUR as user
+            log("Starting yay installation from AUR")
+            try:
+                run_command_with_logging(['arch-chroot', root, 'bash', '-c', f'su - {user} -c "cd /tmp && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"'], log_prefix="[YAY_INSTALL] ")
+                log("yay installed successfully from AUR")
+            except Exception as e:
+                log(f"yay installation failed: {e}", "ERROR")
+                
+            # Step 9: Apply user-selected options
+            print("[INFO] Applying user-selected options...")
+            # Language and Locale
+            lang = config.get('LANGUAGE')
+            locale = config.get('LOCALE')
+            if lang or locale:
+                try:
+                    if locale:
+                        subprocess.run(['arch-chroot', root, 'sed', '-i', f'/^{locale}/s/^#//', '/etc/locale.gen'], check=True)
+                        subprocess.run(['arch-chroot', root, 'locale-gen'], check=True)
+                        subprocess.run(['arch-chroot', root, 'bash', '-c', f'echo LANG={locale} > /etc/locale.conf'], check=True)
+                    if lang:
+                        subprocess.run(['arch-chroot', root, 'bash', '-c', f'echo LANGUAGE={lang} >> /etc/locale.conf'], check=True)
+                    print("[INFO] Locale and language set.")
+                except Exception as e:
+                    print(f"[WARNING] Failed to set locale/language: {e}")
+            # Kernel
+            kernel = config.get('KERNEL')
+            if kernel and kernel != 'linux':
+                try:
+                    subprocess.run(['arch-chroot', root, 'pacman', '-S', '--noconfirm', kernel], check=True)
+                    print(f"[INFO] Kernel set to {kernel}.")
+                except Exception as e:
+                    print(f"[WARNING] Failed to set kernel: {e}")
+            # Timezone
+            timezone = config.get('TIMEZONE')
+            if timezone:
+                try:
+                    subprocess.run(['arch-chroot', root, 'ln', '-sf', f'/usr/share/zoneinfo/{timezone}', '/etc/localtime'], check=True)
+                    subprocess.run(['arch-chroot', root, 'bash', '-c', f'echo {timezone} > /etc/timezone'], check=True)
+                    print(f"[INFO] Timezone set to {timezone}.")
+                except Exception as e:
+                    print(f"[WARNING] Failed to set timezone: {e}")
+            # NTP
+            ntp = config.get('NTP')
+            if ntp == 'enabled':
+                try:
+                    subprocess.run(['arch-chroot', root, 'timedatectl', 'set-ntp', 'true'], check=True)
+                    print("[INFO] NTP enabled.")
+                except Exception as e:
+                    print(f"[WARNING] Failed to enable NTP: {e}")
+            # Hostname
+            hostname = config.get('HOSTNAME')
+            if hostname:
+                try:
+                    subprocess.run(['arch-chroot', root, 'bash', '-c', f'echo {hostname} > /etc/hostname'], check=True)
+                    print(f"[INFO] Hostname set to {hostname}.")
+                except Exception as e:
+                    print(f"[WARNING] Failed to set hostname: {e}")
+            # Mirrorlist
+            mirror = config.get('MIRROR')
+            if mirror:
+                try:
+                    subprocess.run(['arch-chroot', root, 'bash', '-c', f'echo "Server = {mirror}" > /etc/pacman.d/mirrorlist'], check=True)
+                    print(f"[INFO] Mirror set to {mirror}.")
+                except Exception as e:
+                    print(f"[WARNING] Failed to set mirror: {e}")
+            print("[INFO] User-selected options applied.")
+            
+            # Step 10: Call relevant installer script based on profile
+            profile = config.get('PROFILE', 'GamerX Hyprland')
+            log(f"Starting profile installation: {profile}")
+            installer_script = None
+            if profile == "GamerX Hyprland":
+                installer_script = "/usr/local/bin/Installer/install_hyprland.sh"
+            elif profile == "GamerX Hyprland+Gaming":
+                installer_script = "/usr/local/bin/Installer/install_gaming.sh"
+            elif profile == "GamerX Hyprland+Hacking":
+                installer_script = "/usr/local/bin/Installer/install_hacking.sh"
+            log(f"Selected installer script: {installer_script}")
+            
+            # Pre-flight check for installer script
+            if not installer_script:
+                log(f"Installer script not found: {installer_script}", "ERROR")
+                print(f"[ERROR] Installer script missing: {installer_script}")
+                self.app.push_screen(FailScreen(f"Installer script missing: {installer_script}"))
+            # Check profiles directory
+            profiles_src = "/usr/local/bin/profiles"
+            # No existence check for profiles_src, just try to copy if possible
+            try:
+                # Copy the entire profiles directory structure to chroot
+                run_command_with_logging(['cp', '-r', profiles_src, f"{root}/usr/local/bin/"], log_prefix="[PROFILES_COPY] ")
+                log("Profiles directory copied to chroot successfully")
+                # Copy the installer script
+                log(f"Copying installer script to chroot")
+                run_command_with_logging(['cp', installer_script, f"{root}/tmp/installer.sh"], log_prefix="[INSTALLER_COPY] ")
+                run_command_with_logging(['chmod', '+x', f"{root}/tmp/installer.sh"], log_prefix="[INSTALLER_CHMOD] ")
+                run_command_with_logging(['arch-chroot', root, '/tmp/installer.sh'], log_prefix="[PROFILE_INSTALL] ")
+                log(f"Profile installer completed successfully: {profile}")
+            except Exception as e:
+                log(f"Profile installer failed: {e}", "ERROR")
+                print(f"[ERROR] Profile install failed: {e}")
+                self.app.push_screen(FailScreen(f"Profile install failed: {e}"))
+            
+            log("Installation process completed")
+            log(f"Log file location: {log_file}")
+            
+            # Collect all logs into a single file
+            log("Collecting all installation logs...")
+            try:
+                run_command_with_logging(['/usr/local/bin/gx_collect_logs.sh'], log_prefix="[LOG_COLLECTION] ")
+                log("Log collection completed successfully")
+            except Exception as e:
+                log(f"Log collection failed: {e}", "WARNING")
+            
+            print("\033[1;35m\n\nGamerX Linux Installed Successfully!\033[0m\n")
+            print(f"\033[1;36mDetailed logs saved to: {log_file}\033[0m\n")
+            print("\033[1;33mTo collect all logs for debugging, run: /usr/local/bin/gx_collect_logs.sh\033[0m\n")
+        except Exception as e:
+            log(f"Installation failed: {e}", "ERROR")
+            print(f"[ERROR] Installation failed: {e}")
+            print(f"Check logs at: {log_file}")
+            
+            # Try to collect logs even if installation failed
+            try:
+                run_command_with_logging(['/usr/local/bin/gx_collect_logs.sh'], log_prefix="[LOG_COLLECTION] ")
+                print("Log collection completed for debugging")
+            except Exception as log_e:
+                print(f"Log collection failed: {log_e}")
+        sys.exit(0)
+    else:
+        try:
+            GXInstallApp().run()
+        except Exception as e:
+            print(f"[ERROR] {e}", file=sys.stderr)
+            sys.exit(1)
