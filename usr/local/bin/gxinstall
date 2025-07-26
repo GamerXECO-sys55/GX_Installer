@@ -79,7 +79,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.11
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.12
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "2.11"
+GXINSTALL_VERSION = "2.12"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -922,15 +922,22 @@ class InstallLogScreen(Screen):
                 await self.refresh()
                 return
             # --- Log the full command ---
-            cmd = ['stdbuf', '-oL', 'pacstrap', root] + pkgs
-            self.log_lines.append(f'[INFO] Running: {" ".join(cmd)}\n')
+            script_path = shutil.which('script')
+            if not script_path:
+                self.log_lines.append('[ERROR] script(1) not found in PATH. Cannot force TTY for pacstrap.\n')
+                self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+                await self.refresh()
+                return
+            cmdline = f"pacstrap {root} {' '.join(pkgs)}"
+            cmd = ['script', '-qec', cmdline, '/dev/null']
+            self.log_lines.append(f'[INFO] Running (with PTY): {" ".join(cmd)}\n')
             self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
             await self.refresh()
-            # --- Run pacstrap ---
+            # --- Run pacstrap inside script(1) for TTY ---
             try:
                 proc = await create_subprocess_exec(*cmd, stdout=PIPE, stderr=PIPE)
             except Exception as e:
-                self.log_lines.append(f"[ERROR] Failed to start pacstrap: {e}\n")
+                self.log_lines.append(f"[ERROR] Failed to start pacstrap via script: {e}\n")
                 self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
                 await self.refresh()
                 return
