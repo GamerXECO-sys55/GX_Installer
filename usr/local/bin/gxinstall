@@ -11,6 +11,7 @@ import shutil
 import stat
 from pathlib import Path
 import tempfile
+import shlex
 
 # Check for required packages
 try:
@@ -121,7 +122,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "2.14"
+GXINSTALL_VERSION = "2.15"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
