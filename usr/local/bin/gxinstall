@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "2.07"
+GXINSTALL_VERSION = "2.09"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
