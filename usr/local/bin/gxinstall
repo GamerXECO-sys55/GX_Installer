@@ -79,7 +79,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.07
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.08
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -908,36 +908,33 @@ class InstallLogScreen(Screen):
         self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
         await self.refresh()
         try:
-            # Try to install all packages, skipping any that fail
-            failed_pkgs = []
-            for pkg in pkgs:
-                proc = await create_subprocess_exec('stdbuf', '-oL', 'pacstrap', root, pkg, stdout=PIPE, stderr=PIPE)
-                # Read and update logs in real time (both stdout and stderr)
-                while True:
-                    stdout_line = await proc.stdout.readline()
-                    stderr_line = await proc.stderr.readline()
-                    if not stdout_line and not stderr_line:
-                        break
-                    if stdout_line:
-                        decoded = stdout_line.decode(errors="ignore")
-                        self.log_lines.append(decoded)
-                    if stderr_line:
-                        decoded_err = stderr_line.decode(errors="ignore")
-                        self.log_lines.append('[stderr] ' + decoded_err)
-                    self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-                    await self.refresh()  # Force TUI refresh for real-time logs
-                await proc.wait()
-                if proc.returncode != 0:
-                    self.log_lines.append(f"[WARNING] Failed to install package: {pkg}, skipping.\n")
-                    failed_pkgs.append(pkg)
-            if not self.log_lines:
-                self.log_lines.append('[ERROR] No output received from pacstrap. Check if pacstrap is available and working.\n')
+            # Run pacstrap ONCE with the full package list for detailed logs
+            try:
+                proc = await create_subprocess_exec('stdbuf', '-oL', 'pacstrap', root, *pkgs, stdout=PIPE, stderr=PIPE)
+            except Exception as e:
+                self.log_lines.append(f"[ERROR] Failed to start pacstrap: {e}\n")
                 self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
                 await self.refresh()
-
-            if failed_pkgs:
-                self.log_lines.append(f"[WARNING] Some packages failed to install: {' '.join(failed_pkgs)}\n")
+                return
+            # Read and update logs in real time (both stdout and stderr)
+            while True:
+                stdout_line = await proc.stdout.readline()
+                stderr_line = await proc.stderr.readline()
+                if not stdout_line and not stderr_line:
+                    break
+                if stdout_line:
+                    decoded = stdout_line.decode(errors="ignore")
+                    self.log_lines.append(decoded)
+                if stderr_line:
+                    decoded_err = stderr_line.decode(errors="ignore")
+                    self.log_lines.append('[stderr] ' + decoded_err)
+                self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+                await self.refresh()  # Force TUI refresh for real-time logs
+            await proc.wait()
+            if proc.returncode != 0:
+                self.log_lines.append(f"[ERROR] pacstrap failed with exit code {proc.returncode}.\n")
             self.log_lines.append("[INFO] Base system and packages installed.\n")
+
             self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
             await self.refresh()
             # Step 2: Generate fstab
@@ -1458,11 +1455,17 @@ class InstallSummaryScreen(Screen):
         )
 
     def on_mount(self):
-        # Delay focus to prevent Enter key leak and auto-confirm
-        self.set_timer(0.2, lambda: self.query_one("#confirm_install_btn").focus())
+        self.confirm_enabled = False
+        self.set_timer(0.3, self.enable_confirm)
+        self.set_timer(0.3, lambda: self.query_one("#confirm_install_btn").focus())
+
+    def enable_confirm(self):
+        self.confirm_enabled = True
 
     async def on_button_pressed(self, event):
         if event.button.id == "confirm_install_btn":
+            if not getattr(self, 'confirm_enabled', True):
+                return  # Ignore presses during debounce
             # Save config to a temp file for the installer (optional)
             with open("/tmp/gxinstall.conf", "w") as f:
                 json.dump(self.config, f, indent=2)
