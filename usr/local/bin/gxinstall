@@ -79,7 +79,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.10
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.08
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "2.10"
+GXINSTALL_VERSION = "2.09"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
