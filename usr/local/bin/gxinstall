@@ -80,7 +80,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.14
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.18
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "2.15"
+GXINSTALL_VERSION = "2.18"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -1910,6 +1910,9 @@ if __name__ == "__main__":
     result = app.run()
 
     if result == 'install':
+        # --- Clear terminal to prevent TUI overlap ---
+        import os
+        os.system('clear')  # This ensures old TUI frames are wiped
         print("\n[GXINSTALL] Starting installation in the normal terminal...\n")
         # Load config
         try:
@@ -1918,10 +1921,9 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"[ERROR] Could not load config: {e}")
             sys.exit(1)
-        import os
-        
+
         root = config.get('MOUNT_POINT', '/mnt')
-        
+
         # Step 1: Install base Arch + basic packages
         log("Starting base system installation")
         base_pkgs = ['base', 'linux-firmware', 'sudo', 'nano', 'vim', 'python', 'python-pip', 'wget', 'git']
@@ -2107,18 +2109,18 @@ if __name__ == "__main__":
             if not installer_script:
                 log(f"Installer script not found: {installer_script}", "ERROR")
                 print(f"[ERROR] Installer script missing: {installer_script}")
-                self.app.push_screen(FailScreen(f"Installer script missing: {installer_script}"))
-            # Check profiles directory
+                # Do not use TUI FailScreen here; just exit
+                sys.exit(1)
             profiles_src = "/usr/local/bin/profiles"
-            # No existence check for profiles_src, just try to copy if possible
             try:
-                # Copy the entire profiles directory structure to chroot
+                # --- Copy profiles and installer script to the chrooted /tmp for correct pathing ---
                 run_command_with_logging(['cp', '-r', profiles_src, f"{root}/usr/local/bin/"], log_prefix="[PROFILES_COPY] ")
                 log("Profiles directory copied to chroot successfully")
-                # Copy the installer script
-                log(f"Copying installer script to chroot")
+                log(f"Copying installer script to chroot /tmp")
                 run_command_with_logging(['cp', installer_script, f"{root}/tmp/installer.sh"], log_prefix="[INSTALLER_COPY] ")
                 run_command_with_logging(['chmod', '+x', f"{root}/tmp/installer.sh"], log_prefix="[INSTALLER_CHMOD] ")
+                # If you need other config files (like userinfo.conf), copy them to {root}/tmp/ as well
+                # --- Always call installer as /tmp/installer.sh inside chroot ---
                 run_command_with_logging(['arch-chroot', root, '/tmp/installer.sh'], log_prefix="[PROFILE_INSTALL] ")
                 log(f"Profile installer completed successfully: {profile}")
             except Exception as e:
