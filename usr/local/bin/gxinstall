@@ -79,7 +79,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.12
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.13
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "2.12"
+GXINSTALL_VERSION = "2.13"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -1502,7 +1502,8 @@ class InstallSummaryScreen(Screen):
             # Save config to a temp file for the installer (optional)
             with open("/tmp/gxinstall.conf", "w") as f:
                 json.dump(self.config, f, indent=2)
-            self.app.push_screen(InstallLogScreen(self.config))
+            # Instead of pushing a log screen, exit the TUI and run install in terminal
+            self.app.exit(result='install')
         elif event.button.id == "cancel_btn":
             # Pop all screens until we reach the main menu
             while len(self.app.screen_stack) > 1:
@@ -1900,13 +1901,22 @@ class GXInstallApp(App):
         self.query_one("#main_menu").focus()
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--run-install":
-        # Load config and run install directly (no TUI)
-        with open("/tmp/gxinstall.conf") as f:
-            config = json.load(f)
-        # Use the same logic as InstallLogScreen.run_install, but print to terminal
-        import shlex
-        import subprocess
+    from textual.app import App
+    import subprocess
+    import sys
+    # ... (existing TUI startup code)
+    app = InstallerApp()
+    result = app.run()
+
+    if result == 'install':
+        print("\n[GXINSTALL] Starting installation in the normal terminal...\n")
+        # Load config
+        try:
+            with open("/tmp/gxinstall.conf") as f:
+                config = json.load(f)
+        except Exception as e:
+            print(f"[ERROR] Could not load config: {e}")
+            sys.exit(1)
         import os
         
         root = config.get('MOUNT_POINT', '/mnt')
