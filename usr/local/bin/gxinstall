@@ -11,6 +11,7 @@ import shutil
 import stat
 from pathlib import Path
 import tempfile
+import shlex
 
 # Check for required packages
 try:
@@ -79,7 +80,7 @@ INFO_TEXT = Text.from_markup("""
 ────────────────────────────────────────────────────────────
 A modern, user-friendly installer for everyone.
 
-[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.07
+[bold cyan]Developer:[/] GamerX    [bold cyan]Version:[/] 2.23
 [bold cyan]GitHub:[/] https://github.com/GamerXECO-sys55
 [bold cyan]Email:[/] mangeshchoudhary35@gmail.com
 ────────────────────────────────────────────────────────────
@@ -121,7 +122,7 @@ if os.path.exists('/tmp/gxinstall.conf'):
     except Exception:
         pass
 
-GXINSTALL_VERSION = "2.07"
+GXINSTALL_VERSION = "2.23"
 
 # Version check and update logic
 # In archiso, the VERSION file is in the same directory as gxinstall
@@ -638,7 +639,7 @@ class UserScreen(Screen):
     def on_mount(self):
         self.query_one("#username").focus()
 
-    def on_button_pressed(self, event):
+    async def on_button_pressed(self, event):
         if event.button.id == "back_btn":
             self.app.pop_screen()
         elif event.button.id == "save_btn":
@@ -687,7 +688,7 @@ class HostnameScreen(Screen):
     def on_mount(self):
         self.query_one("#hostname").focus()
 
-    def on_button_pressed(self, event):
+    async def on_button_pressed(self, event):
         import re
         if event.button.id == "back_btn":
             self.app.pop_screen()
@@ -759,7 +760,7 @@ class AddPkgScreen(Screen):
     def on_mount(self):
         self.query_one("#addpkgs").focus()
 
-    def on_button_pressed(self, event):
+    async def on_button_pressed(self, event):
         if event.button.id == "back_btn":
             self.app.pop_screen()
         elif event.button.id == "save_btn":
@@ -819,7 +820,7 @@ class NTPScreen(Screen):
     def on_mount(self):
         self.query_one("#ntp").focus()
 
-    def on_button_pressed(self, event):
+    async def on_button_pressed(self, event):
         if event.button.id == "back_btn":
             self.app.pop_screen()
         elif event.button.id == "save_btn":
@@ -852,7 +853,7 @@ class SaveScreen(Screen):
         if event.button.id == "back_btn":
             self.app.pop_screen()
 
-class InstallLogScreen(Screen):
+# Removed InstallLogScreen and all TUI log streaming logic. All installation output now goes to the real terminal after TUI exits.
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -907,37 +908,67 @@ class InstallLogScreen(Screen):
         self.log_lines.append(f"[INFO] Installing base system and packages: {' '.join(pkgs)}\n")
         self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
         await self.refresh()
+        import shutil, time
         try:
-            # Try to install all packages, skipping any that fail
-            failed_pkgs = []
-            for pkg in pkgs:
-                proc = await create_subprocess_exec('stdbuf', '-oL', 'pacstrap', root, pkg, stdout=PIPE, stderr=PIPE)
-                # Read and update logs in real time (both stdout and stderr)
-                while True:
-                    stdout_line = await proc.stdout.readline()
-                    stderr_line = await proc.stderr.readline()
-                    if not stdout_line and not stderr_line:
-                        break
-                    if stdout_line:
-                        decoded = stdout_line.decode(errors="ignore")
-                        self.log_lines.append(decoded)
-                    if stderr_line:
-                        decoded_err = stderr_line.decode(errors="ignore")
-                        self.log_lines.append('[stderr] ' + decoded_err)
-                    self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
-                    await self.refresh()  # Force TUI refresh for real-time logs
-                await proc.wait()
-                if proc.returncode != 0:
-                    self.log_lines.append(f"[WARNING] Failed to install package: {pkg}, skipping.\n")
-                    failed_pkgs.append(pkg)
-            if not self.log_lines:
-                self.log_lines.append('[ERROR] No output received from pacstrap. Check if pacstrap is available and working.\n')
+            # --- Diagnostics: Check pacstrap existence ---
+            pacstrap_path = shutil.which('pacstrap')
+            if not pacstrap_path:
+                self.log_lines.append('[ERROR] pacstrap not found in PATH. Cannot continue.\n')
                 self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
                 await self.refresh()
-
-            if failed_pkgs:
-                self.log_lines.append(f"[WARNING] Some packages failed to install: {' '.join(failed_pkgs)}\n")
+                return
+            if not os.access(pacstrap_path, os.X_OK):
+                self.log_lines.append(f'[ERROR] pacstrap found at {pacstrap_path} but is not executable.\n')
+                self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+                await self.refresh()
+                return
+            # --- Log the full command ---
+            script_path = shutil.which('script')
+            if not script_path:
+                self.log_lines.append('[ERROR] script(1) not found in PATH. Cannot force TTY for pacstrap.\n')
+                self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+                await self.refresh()
+                return
+            cmdline = f"pacstrap {root} {' '.join(pkgs)}"
+            cmd = ['script', '-qec', cmdline, '/dev/null']
+            self.log_lines.append(f'[INFO] Running (with PTY): {" ".join(cmd)}\n')
+            self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+            await self.refresh()
+            # --- Run pacstrap inside script(1) for TTY ---
+            try:
+                proc = await create_subprocess_exec(*cmd, stdout=PIPE, stderr=PIPE)
+            except Exception as e:
+                self.log_lines.append(f"[ERROR] Failed to start pacstrap via script: {e}\n")
+                self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+                await self.refresh()
+                return
+            # --- Timeout for first output ---
+            first_output_time = time.monotonic()
+            got_output = False
+            while True:
+                stdout_line = await proc.stdout.readline()
+                stderr_line = await proc.stderr.readline()
+                if not stdout_line and not stderr_line:
+                    if not got_output and time.monotonic() - first_output_time > 5:
+                        self.log_lines.append('[WARNING] No output from pacstrap after 5 seconds. It may be stuck, missing permissions, or require a TTY.\n')
+                        self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+                        await self.refresh()
+                    break
+                if stdout_line:
+                    decoded = stdout_line.decode(errors="ignore")
+                    self.log_lines.append(decoded)
+                    got_output = True
+                if stderr_line:
+                    decoded_err = stderr_line.decode(errors="ignore")
+                    self.log_lines.append('[stderr] ' + decoded_err)
+                    got_output = True
+                self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
+                await self.refresh()  # Force TUI refresh for real-time logs
+            await proc.wait()
+            if proc.returncode != 0:
+                self.log_lines.append(f"[ERROR] pacstrap failed with exit code {proc.returncode}.\n")
             self.log_lines.append("[INFO] Base system and packages installed.\n")
+
             self.query_one("#log_area", Static).update("".join(self.log_lines)[-2000:])
             await self.refresh()
             # Step 2: Generate fstab
@@ -1421,7 +1452,7 @@ class SuccessScreen(Screen):
             Center(Button("Go into chroot", id="chroot_btn")),
             Center(Button("Exit", id="exit_btn"))
         )
-    def on_button_pressed(self, event):
+    async def on_button_pressed(self, event):
         if event.button.id == "chroot_btn":
             os.system(f"arch-chroot {CONFIG.get('MOUNT_POINT', '/mnt')} /bin/bash")
         elif event.button.id == "exit_btn":
@@ -1437,7 +1468,7 @@ class FailScreen(Screen):
             Center(Button("Retry", id="retry_btn")),
             Center(Button("Exit", id="exit_btn"))
         )
-    def on_button_pressed(self, event):
+    async def on_button_pressed(self, event):
         if event.button.id == "exit_btn":
             self.app.exit()
         elif event.button.id == "retry_btn":
@@ -1458,15 +1489,21 @@ class InstallSummaryScreen(Screen):
         )
 
     def on_mount(self):
-        # Delay focus to prevent Enter key leak and auto-confirm
-        self.set_timer(0.2, lambda: self.query_one("#confirm_install_btn").focus())
+        self.confirm_enabled = False
+        self.set_timer(0.3, self.enable_confirm)
+        self.set_timer(0.3, lambda: self.query_one("#confirm_install_btn").focus())
+
+    def enable_confirm(self):
+        self.confirm_enabled = True
 
     async def on_button_pressed(self, event):
         if event.button.id == "confirm_install_btn":
-            # Save config to a temp file for the installer (optional)
+            if not getattr(self, 'confirm_enabled', True):
+                return
             with open("/tmp/gxinstall.conf", "w") as f:
                 json.dump(self.config, f, indent=2)
-            self.app.push_screen(InstallLogScreen(self.config))
+            # Exit TUI, real install/logs will run in terminal
+            self.app.exit(result='install')
         elif event.button.id == "cancel_btn":
             # Pop all screens until we reach the main menu
             while len(self.app.screen_stack) > 1:
@@ -1493,7 +1530,7 @@ class ExitScreen(Screen):
     def on_mount(self):
         self.query_one("#yes_btn").focus()
 
-    def on_button_pressed(self, event):
+    async def on_button_pressed(self, event):
         if event.button.id == "yes_btn":
             self.app.exit()
         elif event.button.id == "no_btn":
@@ -1510,7 +1547,7 @@ class PreMountedScreen(Screen):
     def on_mount(self):
         self.query_one("#manual_mount").focus()
 
-    def on_button_pressed(self, event):
+    async def on_button_pressed(self, event):
         if event.button.id == "manual_btn":
             mp = self.query_one("#manual_mount").value
             if mp:
@@ -1541,7 +1578,7 @@ class ResultScreen(Screen):
             self.app.pop_screen()
             self.app.pop_screen()
 
-    def on_button_pressed(self, event):
+    async def on_button_pressed(self, event):
         if event.button.id == "confirm_btn":
             self.app.pop_screen()
             if self.main_menu:
@@ -1557,6 +1594,18 @@ def run_gx_install():
     base_pkgs = ['base', 'linux-firmware', 'sudo', 'nano', 'vim', 'python', 'python-pip', 'wget', 'git']
     hyprland_pkgs = ['hyprland', 'waybar', 'wofi', 'swaybg', 'swaylock', 'grim', 'slurp', 'wl-clipboard', 'xdg-desktop-portal-hyprland']
     kernel = CONFIG.get('KERNEL', 'linux')
+
+    # --- Ensure Installer directory is copied into target root ---
+    src_installer = '/usr/local/bin/Installer'
+    dest_installer = os.path.join(root, 'usr/local/bin/Installer')
+    print(f"[INFO] Copying Installer directory to {dest_installer}...")
+    if os.path.exists(dest_installer):
+        import shutil
+        shutil.rmtree(dest_installer)
+    import shutil
+    shutil.copytree(src_installer, dest_installer)
+    print(f"[INFO] Installer directory copied.")
+
     if kernel and kernel not in base_pkgs:
         base_pkgs.append(kernel)
     if 'ADDPKGS' in CONFIG and CONFIG['ADDPKGS']:
@@ -1817,7 +1866,10 @@ elif [ "$profile" = "GamerX Hyprland+Gaming" ]; then
   /tmp/installer.sh
 elif [ "$profile" = "GamerX Hyprland+Hacking" ]; then
   cp /usr/local/bin/Installer/install_hacking.sh /tmp/installer.sh
+  if [ ! -f /tmp/installer.sh ]; then echo "[ERROR] /tmp/installer.sh not created!"; exit 1; fi
   chmod +x /tmp/installer.sh
+  if [ ! -x /tmp/installer.sh ]; then echo "[ERROR] /tmp/installer.sh not executable!"; exit 1; fi
+  echo "[INFO] Running installer script /tmp/installer.sh..."
   /tmp/installer.sh
 fi
 """.format(
@@ -1864,17 +1916,28 @@ class GXInstallApp(App):
         self.query_one("#main_menu").focus()
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--run-install":
-        # Load config and run install directly (no TUI)
-        with open("/tmp/gxinstall.conf") as f:
-            config = json.load(f)
-        # Use the same logic as InstallLogScreen.run_install, but print to terminal
-        import shlex
-        import subprocess
+    from textual.app import App
+    import subprocess
+    import sys
+    # ... (existing TUI startup code)
+    app = GXInstallApp()
+    result = app.run()
+
+    if result == 'install':
+        # --- Clear terminal to prevent TUI overlap ---
         import os
-        
+        os.system('clear')  # This ensures old TUI frames are wiped
+        print("\n[GXINSTALL] Starting installation in the normal terminal...\n")
+        # Load config
+        try:
+            with open("/tmp/gxinstall.conf") as f:
+                config = json.load(f)
+        except Exception as e:
+            print(f"[ERROR] Could not load config: {e}")
+            sys.exit(1)
+
         root = config.get('MOUNT_POINT', '/mnt')
-        
+
         # Step 1: Install base Arch + basic packages
         log("Starting base system installation")
         base_pkgs = ['base', 'linux-firmware', 'sudo', 'nano', 'vim', 'python', 'python-pip', 'wget', 'git']
@@ -1965,7 +2028,15 @@ if __name__ == "__main__":
             except Exception as e:
                 print(f"[WARNING] Hyprland session file failed: {e}")
                 
-            # Step 7: Install HyDE theme (now user exists)
+            # Step 7: Install yay from AUR (before HyDE theme)
+            log("Starting yay installation from AUR (before HyDE theme)")
+            try:
+                run_command_with_logging(['arch-chroot', root, 'bash', '-c', f'su - {user} -c "cd /tmp && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"'], log_prefix="[YAY_INSTALL] ")
+                log("yay installed successfully from AUR")
+            except Exception as e:
+                log(f"yay installation failed: {e}", "ERROR")
+
+            # Step 8: Install HyDE theme (now user exists)
             log("Starting HyDE theme installation (skipping detailed logging as requested)")
             try:
                 run_command_with_logging(['arch-chroot', root, 'pacman', '-S', '--needed', '--noconfirm', 'git', 'base-devel'], log_prefix="[HYDE_DEPS] ")
@@ -2060,18 +2131,19 @@ if __name__ == "__main__":
             if not installer_script:
                 log(f"Installer script not found: {installer_script}", "ERROR")
                 print(f"[ERROR] Installer script missing: {installer_script}")
-                self.app.push_screen(FailScreen(f"Installer script missing: {installer_script}"))
-            # Check profiles directory
+                # Do not use TUI FailScreen here; just exit
+                sys.exit(1)
             profiles_src = "/usr/local/bin/profiles"
-            # No existence check for profiles_src, just try to copy if possible
             try:
-                # Copy the entire profiles directory structure to chroot
+                # --- Copy profiles and installer script to the chrooted /tmp for correct pathing ---
+                # --- Always copy to the actual install location (root) ---
                 run_command_with_logging(['cp', '-r', profiles_src, f"{root}/usr/local/bin/"], log_prefix="[PROFILES_COPY] ")
                 log("Profiles directory copied to chroot successfully")
-                # Copy the installer script
-                log(f"Copying installer script to chroot")
+                log(f"Copying installer script to chroot /tmp (actual install location)")
                 run_command_with_logging(['cp', installer_script, f"{root}/tmp/installer.sh"], log_prefix="[INSTALLER_COPY] ")
                 run_command_with_logging(['chmod', '+x', f"{root}/tmp/installer.sh"], log_prefix="[INSTALLER_CHMOD] ")
+                # If you need other config files (like userinfo.conf), copy them to {root}/tmp/ as well
+                # --- Always call installer as /tmp/installer.sh inside chroot ---
                 run_command_with_logging(['arch-chroot', root, '/tmp/installer.sh'], log_prefix="[PROFILE_INSTALL] ")
                 log(f"Profile installer completed successfully: {profile}")
             except Exception as e:

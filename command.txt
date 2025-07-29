@@ -1,0 +1,63 @@
+# List of commands executed by the installer (gxinstall)
+# This is an ordered, human-readable list for debugging installer logic, paths, and environment issues.
+
+# 1. Install base system and packages
+pacstrap <root> base linux-firmware sudo nano vim python python-pip wget git [kernel] [additional packages]
+
+# 2. Generate fstab
+ genfstab -U <root> > <root>/etc/fstab
+
+# 3. Create user (in chroot)
+arch-chroot <root> useradd -m -G wheel <user>
+arch-chroot <root> bash -c 'echo "<user>:<password>" | chpasswd'
+arch-chroot <root> sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
+
+# 4. Install Hyprland & packages (in chroot)
+arch-chroot <root> pacman -S --noconfirm hyprland waybar wofi swaybg swaylock grim slurp wl-clipboard xdg-desktop-portal-hyprland
+
+# 5. Install GRUB & SDDM (in chroot)
+# (UEFI or BIOS branch)
+arch-chroot <root> pacman -S --noconfirm grub efibootmgr sddm   # (UEFI)
+arch-chroot <root> systemctl enable sddm
+arch-chroot <root> grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --recheck  # (UEFI)
+arch-chroot <root> pacman -S --noconfirm grub sddm   # (BIOS)
+arch-chroot <root> grub-install --target=i386-pc <disk> --recheck  # (BIOS)
+arch-chroot <root> grub-mkconfig -o /boot/grub/grub.cfg
+
+# 6. Create Hyprland session file
+# (Direct file write to <root>/usr/share/wayland-sessions/hyprland.desktop)
+
+# 7. Install HyDE theme (in chroot, as user)
+arch-chroot <root> pacman -S --needed --noconfirm git base-devel
+arch-chroot <root> bash -c 'su - <user> -c "git clone https://github.com/GamerXECO-sys55/Hyprland_GX_theme ~/HyDE"'
+arch-chroot <root> bash -c 'su - <user> -c "cd ~/HyDE/Scripts && ./install.sh"'
+
+# 7. Install yay from AUR (in chroot, as user)
+arch-chroot <root> bash -c 'su - <user> -c "cd /tmp && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm"'
+
+# 8. Install HyDE theme (in chroot, as user)
+arch-chroot <root> pacman -S --needed --noconfirm git base-devel
+arch-chroot <root> bash -c 'su - <user> -c "git clone https://github.com/GamerXECO-sys55/Hyprland_GX_theme ~/HyDE"'
+arch-chroot <root> bash -c 'su - <user> -c "cd ~/HyDE/Scripts && ./install.sh"'
+
+# 9. Apply user-selected options (in chroot)
+arch-chroot <root> sed -i '/^<locale>/s/^#//' /etc/locale.gen
+arch-chroot <root> locale-gen
+arch-chroot <root> bash -c 'echo LANG=<locale> > /etc/locale.conf'
+arch-chroot <root> bash -c 'echo LANGUAGE=<lang> >> /etc/locale.conf'
+arch-chroot <root> ln -sf /usr/share/zoneinfo/<timezone> /etc/localtime
+arch-chroot <root> bash -c 'echo <timezone> > /etc/timezone'
+arch-chroot <root> timedatectl set-ntp true
+arch-chroot <root> bash -c 'echo <hostname> > /etc/hostname'
+arch-chroot <root> bash -c 'echo "Server = <mirror>" > /etc/pacman.d/mirrorlist'
+
+# 10. Call profile installer script (in chroot)
+cp -r /usr/local/bin/profiles <root>/usr/local/bin/
+cp /usr/local/bin/Installer/install_<profile>.sh <root>/tmp/installer.sh
+chmod +x <root>/tmp/installer.sh
+arch-chroot <root> /tmp/installer.sh
+
+# 11. Collect logs
+/usr/local/bin/gx_collect_logs.sh
+
+# Replace <root>, <user>, <password>, <kernel>, <additional packages>, <disk>, <locale>, <lang>, <timezone>, <hostname>, <mirror>, <profile> with actual values from config.
