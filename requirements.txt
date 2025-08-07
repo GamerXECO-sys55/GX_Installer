@@ -1,0 +1,3 @@
+# GamerX Linux Installer Dependencies
+textual>=0.41.0
+rich>=13.0.0

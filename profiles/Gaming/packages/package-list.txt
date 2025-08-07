@@ -1,0 +1,32 @@
+# Gaming Profile Packages
+# Gaming platforms
+steam
+lutris
+wine
+wine-mono
+wine-gecko
+
+# Gaming utilities
+gamemode
+mangohud
+lib32-gamemode
+lib32-mangohud
+
+# Graphics drivers (common)
+mesa
+lib32-mesa
+vulkan-icd-loader
+lib32-vulkan-icd-loader
+
+# Audio for gaming
+pulseaudio
+pulseaudio-alsa
+lib32-pulseaudio
+
+# Input devices
+xf86-input-evdev
+xf86-input-libinput
+
+# Additional gaming tools
+discord
+teamspeak3 

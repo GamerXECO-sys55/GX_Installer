@@ -1,0 +1,50 @@
+# Hacking Profile Packages
+# Network tools
+nmap
+wireshark-qt
+tcpdump
+netcat
+openssh
+
+# Security tools
+john
+hashcat
+hydra
+sqlmap
+metasploit
+
+# Forensics
+autopsy
+volatility3
+binwalk
+hexedit
+
+# Reverse engineering
+gdb
+radare2
+ghidra
+ida-free
+
+# Web security
+burpsuite
+nikto
+dirb
+gobuster
+
+# Wireless tools
+aircrack-ng
+kismet
+wireshark-cli
+
+# System analysis
+strace
+ltrace
+gdb
+objdump
+
+# Additional tools
+vim
+nano
+python
+python-pip
+git 

@@ -1,0 +1,218 @@
+#!/bin/bash
+
+# GamerX Linux Installer - Main Entry Point
+# This script maintains compatibility with the original gxinstall command
+# while calling the new modular Python installer
+
+set -euo pipefail
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Function to print colored output
+print_status() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Function to check if running as root
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        print_error "This installer must be run as root!"
+        echo "Please run: sudo gxinstall"
+        exit 1
+    fi
+}
+
+# Function to check if in live environment
+check_live_env() {
+    if ! grep -q "archiso" /proc/cmdline 2>/dev/null; then
+        print_warning "Not running in Arch Linux live environment!"
+        echo "This installer is designed for Arch Linux live environment."
+        read -p "Continue anyway? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+}
+
+# Function to check Python dependencies
+check_dependencies() {
+    print_status "Checking dependencies..."
+    
+    # Check Python version
+    if ! python3 -c "import sys; exit(0 if sys.version_info >= (3, 9) else 1)" 2>/dev/null; then
+        print_error "Python 3.9+ is required!"
+        exit 1
+    fi
+    
+    # Check if pip is available
+    if ! command -v pip3 &> /dev/null; then
+        print_error "pip3 is not available!"
+        exit 1
+    fi
+    
+    # Install dependencies if requirements.txt exists
+    if [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
+        print_status "Installing Python dependencies..."
+        pip3 install -r "$SCRIPT_DIR/requirements.txt" --quiet --break-system-packages 2>/dev/null || {
+            print_warning "Failed to install some dependencies, continuing anyway..."
+        }
+    fi
+}
+
+# Function to update the installer
+update_installer() {
+    print_status "Updating GamerX Linux Installer..."
+    
+    # Check if we're in a git repository
+    if [[ -d "$SCRIPT_DIR/.git" ]]; then
+        cd "$SCRIPT_DIR"
+        
+        print_status "Fetching latest changes..."
+        if git fetch origin main; then
+            
+            # Check if there are updates
+            LOCAL=$(git rev-parse HEAD)
+            REMOTE=$(git rev-parse origin/main)
+            
+            if [[ "$LOCAL" == "$REMOTE" ]]; then
+                print_success "Installer is already up to date!"
+                return 0
+            fi
+            
+            print_status "Updates available. Pulling changes..."
+            if git pull origin main; then
+                print_success "Installer updated successfully!"
+                
+                # Update dependencies
+                if [[ -f "requirements.txt" ]]; then
+                    print_status "Updating dependencies..."
+                    pip3 install -r requirements.txt --quiet --break-system-packages 2>/dev/null || true
+                fi
+                
+                print_success "Update complete! Please run 'gxinstall' again."
+                exit 0
+            else
+                print_error "Failed to update installer!"
+                exit 1
+            fi
+        else
+            print_error "Failed to fetch updates!"
+            exit 1
+        fi
+    else
+        print_warning "Not a git repository. Cannot update automatically."
+        print_status "Please download the latest version manually from:"
+        echo "https://github.com/gamerx/Custom-Arch-linux"
+        exit 1
+    fi
+}
+
+# Function to show version information
+show_version() {
+    echo -e "${PURPLE}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${PURPLE}║${NC}                    ${CYAN}GamerX Linux Installer${NC}                    ${PURPLE}║${NC}"
+    echo -e "${PURPLE}╠══════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${PURPLE}║${NC} Version: ${GREEN}3.0.0${NC} (Modular Rebuild)                           ${PURPLE}║${NC}"
+    echo -e "${PURPLE}║${NC} Author:  ${YELLOW}GamerX${NC}                                           ${PURPLE}║${NC}"
+    echo -e "${PURPLE}║${NC} GitHub:  ${BLUE}https://github.com/gamerx/Custom-Arch-linux${NC}     ${PURPLE}║${NC}"
+    echo -e "${PURPLE}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo
+}
+
+# Function to show help
+show_help() {
+    show_version
+    echo "Usage: gxinstall [OPTION]"
+    echo
+    echo "Options:"
+    echo "  (no args)    Start the installation wizard"
+    echo "  --update     Update the installer to the latest version"
+    echo "  --version    Show version information"
+    echo "  --help       Show this help message"
+    echo "  --debug      Run in debug mode with verbose output"
+    echo
+    echo "Examples:"
+    echo "  gxinstall           # Start installation"
+    echo "  gxinstall --update  # Update installer"
+    echo "  gxinstall --debug   # Debug mode"
+    echo
+}
+
+# Function to run the main installer
+run_installer() {
+    local debug_mode=""
+    
+    # Check for debug flag
+    if [[ "${1:-}" == "--debug" ]]; then
+        debug_mode="--debug"
+        print_status "Running in debug mode..."
+    fi
+    
+    # Change to script directory
+    cd "$SCRIPT_DIR"
+    
+    # Run the Python installer
+    print_status "Starting GamerX Linux Installer..."
+    exec python3 main.py $debug_mode
+}
+
+# Main function
+main() {
+    # Parse command line arguments
+    case "${1:-}" in
+        --update)
+            check_root
+            update_installer
+            ;;
+        --version)
+            show_version
+            ;;
+        --help)
+            show_help
+            ;;
+        --debug)
+            check_root
+            check_live_env
+            check_dependencies
+            run_installer "--debug"
+            ;;
+        "")
+            # No arguments - run installer
+            check_root
+            check_live_env
+            check_dependencies
+            run_installer
+            ;;
+        *)
+            print_error "Unknown option: $1"
+            echo "Use 'gxinstall --help' for usage information."
+            exit 1
+            ;;
+    esac
+}
+
+# Run main function with all arguments
+main "$@"
