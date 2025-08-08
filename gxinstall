@@ -243,7 +243,7 @@ update_installer() {
                 
                 # Copy new files over existing installation
                 print_status "Installing updated files..."
-                EXTRACTED_DIR="$TEMP_DIR/GX_Installer-main/gxinstall-new"
+                EXTRACTED_DIR="$TEMP_DIR/GX_Installer-main"
                 
                 if [[ -d "$EXTRACTED_DIR" ]]; then
                     # Backup current version
