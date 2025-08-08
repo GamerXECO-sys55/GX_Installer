@@ -18,6 +18,9 @@ NC='\033[0m' # No Color
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Current version
+CURRENT_VERSION="1.4.0"
+
 # Function to print colored output
 print_status() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -82,6 +85,105 @@ check_dependencies() {
     fi
 }
 
+# Function to compare versions (returns 0 if v1 < v2, 1 if v1 >= v2)
+version_compare() {
+    local v1="$1"
+    local v2="$2"
+    
+    # Convert versions to comparable format (remove dots, pad with zeros)
+    local v1_num=$(echo "$v1" | sed 's/\.//g' | sed 's/^/000/' | sed 's/.*\(...\)$/\1/')
+    local v2_num=$(echo "$v2" | sed 's/\.//g' | sed 's/^/000/' | sed 's/.*\(...\)$/\1/')
+    
+    if [[ "$v1_num" -lt "$v2_num" ]]; then
+        return 0  # v1 < v2 (update available)
+    else
+        return 1  # v1 >= v2 (no update needed)
+    fi
+}
+
+# Function to check for updates without downloading
+check_for_updates() {
+    local quiet="${1:-false}"
+    
+    # Create temporary directory for version check
+    local temp_dir="/tmp/gxinstall-version-check-$$"
+    mkdir -p "$temp_dir"
+    
+    # Download only the settings.py file to check version
+    if curl -s "https://raw.githubusercontent.com/GamerXECO-sys55/GX_Installer/main/gxinstall-new/config/settings.py" -o "$temp_dir/settings.py" 2>/dev/null; then
+        # Extract version from downloaded file
+        local remote_version=$(grep 'VERSION = ' "$temp_dir/settings.py" | sed 's/.*VERSION = "\([^"]*\)".*/\1/')
+        
+        # Cleanup
+        rm -rf "$temp_dir"
+        
+        if [[ -n "$remote_version" ]]; then
+            if version_compare "$CURRENT_VERSION" "$remote_version"; then
+                if [[ "$quiet" != "true" ]]; then
+                    print_status "Update available: v$CURRENT_VERSION → v$remote_version"
+                fi
+                return 0  # Update available
+            else
+                if [[ "$quiet" != "true" ]]; then
+                    print_success "You have the latest version (v$CURRENT_VERSION)"
+                fi
+                return 1  # No update needed
+            fi
+        fi
+    fi
+    
+    # Cleanup on failure
+    rm -rf "$temp_dir" 2>/dev/null
+    
+    if [[ "$quiet" != "true" ]]; then
+        print_warning "Could not check for updates (network issue)"
+    fi
+    return 2  # Check failed
+}
+
+# Function to prompt for automatic update in live environment
+prompt_auto_update() {
+    if check_for_updates "true"; then
+        echo
+        print_status "🚀 A newer version of GamerX Installer is available!"
+        print_status "Current: v$CURRENT_VERSION"
+        
+        # Get remote version for display
+        local temp_dir="/tmp/gxinstall-version-check-$$"
+        mkdir -p "$temp_dir"
+        if curl -s "https://raw.githubusercontent.com/GamerXECO-sys55/GX_Installer/main/gxinstall-new/config/settings.py" -o "$temp_dir/settings.py" 2>/dev/null; then
+            local remote_version=$(grep 'VERSION = ' "$temp_dir/settings.py" | sed 's/.*VERSION = "\([^"]*\)".*/\1/')
+            print_status "Latest:  v$remote_version"
+        fi
+        rm -rf "$temp_dir" 2>/dev/null
+        
+        echo
+        echo -e "${YELLOW}Would you like to update now? This will ensure you have the latest features and fixes.${NC}"
+        echo -e "${GREEN}[Y]es${NC} / ${RED}[N]o${NC} / ${BLUE}[S]kip this session${NC}"
+        echo -n "Choice [Y/n/s]: "
+        
+        read -r choice
+        case "${choice,,}" in
+            "" | "y" | "yes")
+                print_status "Updating installer..."
+                update_installer
+                print_success "Update complete! Restarting installer..."
+                echo
+                exec "$0" "$@"  # Restart with same arguments
+                ;;
+            "s" | "skip")
+                print_status "Skipping update for this session..."
+                # Create a temporary flag to skip update check for this session
+                touch "/tmp/gxinstall-skip-update-$$"
+                ;;
+            *)
+                print_status "Continuing with current version..."
+                ;;
+        esac
+        echo
+    fi
+}
+
 # Function to update the installer
 update_installer() {
     print_status "Updating GamerX Linux Installer..."
@@ -123,10 +225,63 @@ update_installer() {
             exit 1
         fi
     else
-        print_warning "Not a git repository. Cannot update automatically."
-        print_status "Please download the latest version manually from:"
-        echo "https://github.com/gamerx/Custom-Arch-linux"
-        exit 1
+        # Live environment - download from GitHub
+        print_status "Live environment detected. Downloading latest version..."
+        
+        # Create temporary directory
+        TEMP_DIR="/tmp/gxinstall-update-$$"
+        mkdir -p "$TEMP_DIR"
+        
+        # Download latest release
+        print_status "Downloading from GitHub..."
+        if curl -L "https://github.com/GamerXECO-sys55/GX_Installer/archive/refs/heads/main.zip" -o "$TEMP_DIR/gxinstall.zip"; then
+            
+            # Extract the archive
+            print_status "Extracting files..."
+            cd "$TEMP_DIR"
+            if unzip -q gxinstall.zip; then
+                
+                # Copy new files over existing installation
+                print_status "Installing updated files..."
+                EXTRACTED_DIR="$TEMP_DIR/GX_Installer-main/gxinstall-new"
+                
+                if [[ -d "$EXTRACTED_DIR" ]]; then
+                    # Backup current version
+                    cp -r "$SCRIPT_DIR" "$SCRIPT_DIR.backup.$(date +%s)"
+                    
+                    # Copy new files (preserve permissions)
+                    cp -r "$EXTRACTED_DIR/"* "$SCRIPT_DIR/"
+                    
+                    # Make scripts executable
+                    chmod +x "$SCRIPT_DIR/gxinstall"
+                    chmod +x "$SCRIPT_DIR/main.py"
+                    find "$SCRIPT_DIR/profiles" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+                    
+                    # Install dependencies
+                    print_status "Installing updated dependencies..."
+                    pip3 install --break-system-packages -r "$SCRIPT_DIR/requirements.txt" >/dev/null 2>&1
+                    
+                    # Cleanup
+                    rm -rf "$TEMP_DIR"
+                    
+                    print_success "Update completed successfully!"
+                    print_status "Restart the installer to use the updated version."
+                else
+                    print_error "Downloaded archive structure is unexpected"
+                    rm -rf "$TEMP_DIR"
+                    exit 1
+                fi
+            else
+                print_error "Failed to extract downloaded archive"
+                rm -rf "$TEMP_DIR"
+                exit 1
+            fi
+        else
+            print_error "Failed to download update from GitHub"
+            print_status "Please check your internet connection and try again."
+            rm -rf "$TEMP_DIR"
+            exit 1
+        fi
     fi
 }
 
@@ -135,9 +290,9 @@ show_version() {
     echo -e "${PURPLE}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${PURPLE}║${NC}                    ${CYAN}GamerX Linux Installer${NC}                    ${PURPLE}║${NC}"
     echo -e "${PURPLE}╠══════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${PURPLE}║${NC} Version: ${GREEN}3.0.0${NC} (Modular Rebuild)                           ${PURPLE}║${NC}"
+    echo -e "${PURPLE}║${NC} Version: ${GREEN}$CURRENT_VERSION${NC} (Modular Rebuild)                           ${PURPLE}║${NC}"
     echo -e "${PURPLE}║${NC} Author:  ${YELLOW}GamerX${NC}                                           ${PURPLE}║${NC}"
-    echo -e "${PURPLE}║${NC} GitHub:  ${BLUE}https://github.com/gamerx/Custom-Arch-linux${NC}     ${PURPLE}║${NC}"
+    echo -e "${PURPLE}║${NC} GitHub:  ${BLUE}https://github.com/GamerXECO-sys55/GX_Installer${NC}     ${PURPLE}║${NC}"
     echo -e "${PURPLE}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo
 }
@@ -148,16 +303,18 @@ show_help() {
     echo "Usage: gxinstall [OPTION]"
     echo
     echo "Options:"
-    echo "  (no args)    Start the installation wizard"
-    echo "  --update     Update the installer to the latest version"
-    echo "  --version    Show version information"
-    echo "  --help       Show this help message"
-    echo "  --debug      Run in debug mode with verbose output"
+    echo "  (no args)       Start the installation wizard"
+    echo "  --update        Update the installer to the latest version"
+    echo "  --check-updates Check for available updates without installing"
+    echo "  --version       Show version information"
+    echo "  --help          Show this help message"
+    echo "  --debug         Run in debug mode with verbose output"
     echo
     echo "Examples:"
-    echo "  gxinstall           # Start installation"
-    echo "  gxinstall --update  # Update installer"
-    echo "  gxinstall --debug   # Debug mode"
+    echo "  gxinstall                # Start installation"
+    echo "  gxinstall --update       # Update installer"
+    echo "  gxinstall --check-updates # Check for updates"
+    echo "  gxinstall --debug        # Debug mode"
     echo
 }
 
@@ -169,6 +326,12 @@ run_installer() {
     if [[ "${1:-}" == "--debug" ]]; then
         debug_mode="--debug"
         print_status "Running in debug mode..."
+    fi
+    
+    # Check for automatic updates in live environment (only if not git repo and not already skipped)
+    if [[ ! -d "$SCRIPT_DIR/.git" ]] && [[ ! -f "/tmp/gxinstall-skip-update-$$" ]]; then
+        print_status "Checking for updates..."
+        prompt_auto_update "$@"
     fi
     
     # Change to script directory
@@ -186,6 +349,10 @@ main() {
         --update)
             check_root
             update_installer
+            ;;
+        --check-updates)
+            print_status "Checking for updates..."
+            check_for_updates
             ;;
         --version)
             show_version

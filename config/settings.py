@@ -7,7 +7,7 @@ from pathlib import Path
 
 # Application info
 APP_NAME = "GamerX Installer"
-VERSION = "3.0.0"
+VERSION = "1.4.0"
 DESCRIPTION = "Modern Arch Linux installer with beautiful TUI"
 
 # Paths

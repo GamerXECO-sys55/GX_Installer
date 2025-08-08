@@ -15,7 +15,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from ui.app import GamerXInstallerApp
 from utils.logging import setup_logging
-from config.settings import VERSION, APP_NAME
+from config.settings import VERSION, APP_NAME, THEME_COLORS
 
 def check_requirements():
     """Check if running as root and other requirements"""
