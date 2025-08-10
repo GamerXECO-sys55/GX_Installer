@@ -14,11 +14,11 @@ from textual.reactive import reactive
 from textual.message import Message
 from textual import events
 
-from ui.app import BaseScreen
-from config.mirrors import MIRRORS
+from ui.base import BaseInstallerScreen
+from config.mirrors import WORLDWIDE_MIRRORS as MIRRORS
 
 
-class MirrorScreen(BaseScreen):
+class MirrorScreen(BaseInstallerScreen):
     """Mirror selection screen with speed testing"""
     
     CSS = """

@@ -12,11 +12,11 @@ from textual.reactive import reactive
 from textual.message import Message
 from textual import events
 
-from ui.app import BaseScreen
+from ui.base import BaseInstallerScreen
 from core.installer import GamerXInstaller
 
 
-class InstallScreen(BaseScreen):
+class InstallScreen(BaseInstallerScreen):
     """Installation screen with progress tracking"""
     
     CSS = """

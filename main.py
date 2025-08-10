@@ -13,7 +13,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from ui.app import GamerXInstallerApp
+from ui.app import GamerXApp
 from utils.logging import setup_logging
 from config.settings import VERSION, APP_NAME, THEME_COLORS
 
@@ -44,7 +44,7 @@ async def main():
     setup_logging()
     
     # Create and run the TUI application
-    app = GamerXInstallerApp()
+    app = GamerXApp()
     await app.run_async()
 
 if __name__ == "__main__":

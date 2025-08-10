@@ -7,7 +7,7 @@ from textual.containers import Container, Vertical, Horizontal
 from textual.widgets import Static, Button, Input, Checkbox
 from textual.binding import Binding
 
-from ui.app import BaseInstallerScreen
+from ui.base import BaseInstallerScreen
 from utils.validation import validate_username, validate_password
 from utils.logging import get_logger
 

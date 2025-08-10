@@ -11,11 +11,11 @@ from textual.reactive import reactive
 from textual.message import Message
 from textual import events
 
-from ui.app import BaseScreen
+from ui.base import BaseInstallerScreen
 from utils.validation import format_size
 
 
-class SummaryScreen(BaseScreen):
+class SummaryScreen(BaseInstallerScreen):
     """Summary screen showing all configuration before installation"""
     
     CSS = """

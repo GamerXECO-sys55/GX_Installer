@@ -13,10 +13,10 @@ from textual.reactive import reactive
 from textual.message import Message
 from textual import events
 
-from ui.app import BaseScreen
+from ui.base import BaseInstallerScreen
 
 
-class LocaleScreen(BaseScreen):
+class LocaleScreen(BaseInstallerScreen):
     """Locale selection screen with user-friendly display"""
     
     CSS = """

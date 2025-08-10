@@ -13,11 +13,11 @@ from textual.reactive import reactive
 from textual.message import Message
 from textual import events
 
-from ui.app import BaseScreen
+from ui.base import BaseInstallerScreen
 from utils.validation import get_system_memory, format_size
 
 
-class SwapScreen(BaseScreen):
+class SwapScreen(BaseInstallerScreen):
     """Swap configuration screen with intelligent recommendations"""
     
     CSS = """

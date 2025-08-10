@@ -4,6 +4,8 @@ Input validation utilities
 
 import re
 import shutil
+import subprocess
+import socket
 from pathlib import Path
 from typing import Tuple, Optional
 from config.settings import VALIDATION, MOUNT_POINT
@@ -156,6 +158,86 @@ def validate_swap_size(swap_size: str, disk_path: str) -> Tuple[bool, str]:
     except Exception as e:
         logger.error(f"Error validating swap size: {e}")
         return False, f"Could not validate swap size: {e}"
+
+def get_system_memory() -> int:
+    """Get system memory in MB"""
+    try:
+        with open('/proc/meminfo', 'r') as f:
+            for line in f:
+                if line.startswith('MemTotal:'):
+                    # Extract memory in kB and convert to MB
+                    mem_kb = int(line.split()[1])
+                    return mem_kb // 1024
+        return 0
+    except Exception as e:
+        logger.error(f"Error getting system memory: {e}")
+        return 0
+
+def format_size(size_bytes: int) -> str:
+    """Format size in bytes to human readable format"""
+    if size_bytes == 0:
+        return "0B"
+    
+    size_names = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    while size_bytes >= 1024 and i < len(size_names) - 1:
+        size_bytes /= 1024.0
+        i += 1
+    
+    return f"{size_bytes:.1f}{size_names[i]}"
+
+def validate_username(username: str) -> Tuple[bool, str]:
+    """Validate username according to Linux standards"""
+    if not username:
+        return False, "Username cannot be empty"
+    
+    if len(username) > 32:
+        return False, "Username too long (max 32 characters)"
+    
+    if not re.match(r'^[a-z_][a-z0-9_-]*$', username):
+        return False, "Invalid username format (use lowercase letters, numbers, underscore, hyphen)"
+    
+    if username in ['root', 'bin', 'daemon', 'sys', 'sync', 'games', 'man', 'lp', 'mail', 'news', 'uucp', 'proxy', 'www-data', 'backup', 'list', 'irc', 'gnats', 'nobody']:
+        return False, "Username is reserved"
+    
+    return True, "Valid username"
+
+def validate_password(password: str) -> Tuple[bool, str]:
+    """Validate password strength"""
+    if not password:
+        return False, "Password cannot be empty"
+    
+    if len(password) < 6:
+        return False, "Password too short (minimum 6 characters)"
+    
+    if len(password) > 128:
+        return False, "Password too long (maximum 128 characters)"
+    
+    # Check for at least one letter and one number
+    has_letter = any(c.isalpha() for c in password)
+    has_number = any(c.isdigit() for c in password)
+    
+    if not has_letter:
+        return False, "Password must contain at least one letter"
+    
+    if not has_number:
+        return False, "Password must contain at least one number"
+    
+    return True, "Strong password"
+
+def validate_network_connection() -> Tuple[bool, str]:
+    """Check if network connection is available"""
+    try:
+        # Try to connect to Google DNS
+        socket.create_connection(("8.8.8.8", 53), timeout=3)
+        return True, "Network connection available"
+    except OSError:
+        try:
+            # Try alternative DNS
+            socket.create_connection(("1.1.1.1", 53), timeout=3)
+            return True, "Network connection available"
+        except OSError:
+            return False, "No network connection detected"
 
 def validate_mount_point() -> Tuple[bool, str]:
     """Validate mount point is ready for installation"""

@@ -13,11 +13,11 @@ from textual.reactive import reactive
 from textual.message import Message
 from textual import events
 
-from ui.app import BaseScreen
+from ui.base import BaseInstallerScreen
 from core.profiles import ProfileManager
 
 
-class ProfilesScreen(BaseScreen):
+class ProfilesScreen(BaseInstallerScreen):
     """Profile selection screen with validation"""
     
     CSS = """

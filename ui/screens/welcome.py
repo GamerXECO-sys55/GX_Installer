@@ -10,7 +10,7 @@ from textual.binding import Binding
 import asyncio
 from pathlib import Path
 
-from ui.app import BaseInstallerScreen
+from ui.base import BaseInstallerScreen
 from utils.logging import get_logger
 from utils.validation import validate_network_connection
 

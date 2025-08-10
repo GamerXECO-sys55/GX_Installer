@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional
 import asyncio
 
 from utils.logging import get_logger
-from config.settings import CONFIG, UI_COLORS
+from config.settings import CONFIG, THEME_COLORS
 from ui.screens.welcome import WelcomeScreen
 from ui.screens.disk import DiskSelectionScreen
 from ui.screens.hostname import HostnameScreen
@@ -34,33 +34,33 @@ class GamerXApp(App):
     
     CSS = f"""
     Screen {{
-        background: {UI_COLORS['background']};
+        background: {THEME_COLORS['background']};
     }}
     
     .title {{
-        color: {UI_COLORS['primary']};
+        color: {THEME_COLORS['primary']};
         text-style: bold;
     }}
     
     .subtitle {{
-        color: {UI_COLORS['secondary']};
+        color: {THEME_COLORS['secondary']};
     }}
     
     .success {{
-        color: {UI_COLORS['success']};
+        color: {THEME_COLORS['success']};
     }}
     
     .warning {{
-        color: {UI_COLORS['warning']};
+        color: {THEME_COLORS['warning']};
     }}
     
     .error {{
-        color: {UI_COLORS['error']};
+        color: {THEME_COLORS['error']};
     }}
     
     .highlight {{
-        background: {UI_COLORS['highlight']};
-        color: {UI_COLORS['background']};
+        background: {THEME_COLORS['highlight']};
+        color: {THEME_COLORS['background']};
     }}
     
     Button {{
@@ -68,13 +68,13 @@ class GamerXApp(App):
     }}
     
     Button.-primary {{
-        background: {UI_COLORS['primary']};
-        color: {UI_COLORS['background']};
+        background: {THEME_COLORS['primary']};
+        color: {THEME_COLORS['background']};
     }}
     
     Button.-secondary {{
-        background: {UI_COLORS['secondary']};
-        color: {UI_COLORS['background']};
+        background: {THEME_COLORS['secondary']};
+        color: {THEME_COLORS['background']};
     }}
     
     Input {{
@@ -88,11 +88,11 @@ class GamerXApp(App):
     .container {{
         padding: 1;
         margin: 1;
-        border: solid {UI_COLORS['secondary']};
+        border: solid {THEME_COLORS['secondary']};
     }}
     
     .progress {{
-        color: {UI_COLORS['success']};
+        color: {THEME_COLORS['success']};
         text-style: bold;
     }}
     """
@@ -110,7 +110,7 @@ class GamerXApp(App):
     def __init__(self):
         super().__init__()
         self.config = CONFIG.copy()
-        self.screen_stack = []
+
         
     def compose(self) -> ComposeResult:
         """Compose the main app layout"""
@@ -140,7 +140,7 @@ class GamerXApp(App):
 Configuration:
 {self.config}
 
-Screen Stack: {len(self.screen_stack)}
+Active Screens: {len(self.screen_stack)}
 """
         self.notify(debug_info, title="Debug Info", timeout=10)
     
@@ -253,49 +253,4 @@ Screen Stack: {len(self.screen_stack)}
         logger.warning(f"{title}: {message}")
         self.notify(message, title=title, severity="warning", timeout=8)
 
-class BaseInstallerScreen(Screen):
-    """Base class for installer screens with common functionality"""
-    
-    def __init__(self, config: Dict[str, Any], name: Optional[str] = None):
-        super().__init__(name=name)
-        self.config = config
-        self.app_ref = None
-    
-    def on_mount(self) -> None:
-        """Store reference to main app"""
-        self.app_ref = self.app
-    
-    async def navigate_to(self, screen_name: str) -> None:
-        """Navigate to another screen"""
-        if self.app_ref:
-            await self.app_ref.navigate_to_screen(screen_name)
-    
-    async def go_back(self) -> None:
-        """Go back to previous screen"""
-        if self.app_ref:
-            await self.app_ref.go_back()
-    
-    def update_config(self, key: str, value: Any) -> None:
-        """Update configuration"""
-        self.config[key] = value
-        if self.app_ref:
-            self.app_ref.update_config(key, value)
-    
-    def get_config(self, key: str, default: Any = None) -> Any:
-        """Get configuration value"""
-        return self.config.get(key, default)
-    
-    async def show_error(self, message: str, title: str = "Error") -> None:
-        """Show error message"""
-        if self.app_ref:
-            await self.app_ref.show_error(message, title)
-    
-    async def show_success(self, message: str, title: str = "Success") -> None:
-        """Show success message"""
-        if self.app_ref:
-            await self.app_ref.show_success(message, title)
-    
-    async def show_warning(self, message: str, title: str = "Warning") -> None:
-        """Show warning message"""
-        if self.app_ref:
-            await self.app_ref.show_warning(message, title)
+

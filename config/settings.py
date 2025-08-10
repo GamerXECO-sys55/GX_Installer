@@ -7,7 +7,7 @@ from pathlib import Path
 
 # Application info
 APP_NAME = "GamerX Installer"
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 DESCRIPTION = "Modern Arch Linux installer with beautiful TUI"
 
 # Paths
@@ -36,7 +36,13 @@ THEME_COLORS = {
     "error": "#ff4444",
     "warning": "#ffaa00",
     "success": "#44ff44",
-    "info": "#4488ff"
+    "info": "#4488ff",
+    "background": "#1a1a1a",
+    "surface": "#2a2a2a",
+    "text": "#ffffff",
+    "text_secondary": "#cccccc",
+    "border": "#444444",
+    "highlight": "#333333"
 }
 
 # Installation configuration state

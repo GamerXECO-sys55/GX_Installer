@@ -9,7 +9,7 @@ from textual.widgets import Static, Button, Select, DataTable
 from textual.binding import Binding
 import asyncio
 
-from ui.app import BaseInstallerScreen
+from ui.base import BaseInstallerScreen
 from core.disk import DiskManager
 from utils.logging import get_logger
 
