@@ -43,10 +43,10 @@ class WelcomeScreen(BaseInstallerScreen):
                     yield Button("Continue", variant="primary", id="continue-btn", disabled=True)
                     yield Button("Quit", variant="default", id="quit-btn")
     
-    async def on_mount(self) -> None:
+    def on_mount(self) -> None:
         """Run system checks on mount"""
         super().on_mount()
-        await self.run_system_checks()
+        self.call_after_refresh(self.run_system_checks)
     
     async def run_system_checks(self) -> None:
         """Run system requirement checks"""
@@ -72,7 +72,7 @@ class WelcomeScreen(BaseInstallerScreen):
                 await asyncio.sleep(0.5)  # Visual delay
                 
                 try:
-                    result = await check_func()
+                    result = check_func()
                     if result:
                         passed_checks += 1
                         status.update(f"✅ {description}")
@@ -98,12 +98,12 @@ class WelcomeScreen(BaseInstallerScreen):
             logger.error(f"System checks failed: {e}")
             await self.show_error(f"System checks failed: {e}")
     
-    async def check_root(self) -> bool:
+    def check_root(self) -> bool:
         """Check if running as root"""
         import os
         return os.geteuid() == 0
     
-    async def check_live_env(self) -> bool:
+    def check_live_env(self) -> bool:
         """Check if running in Arch Linux live environment"""
         try:
             # Check for live environment indicators
@@ -116,7 +116,7 @@ class WelcomeScreen(BaseInstallerScreen):
         except Exception:
             return False
     
-    async def check_disk_space(self) -> bool:
+    def check_disk_space(self) -> bool:
         """Check available disk space"""
         try:
             import shutil
@@ -126,11 +126,11 @@ class WelcomeScreen(BaseInstallerScreen):
         except Exception:
             return False
     
-    async def check_network(self) -> bool:
+    def check_network(self) -> bool:
         """Check network connectivity"""
         return validate_network_connection()
     
-    async def check_tools(self) -> bool:
+    def check_tools(self) -> bool:
         """Check required tools are available"""
         try:
             import subprocess
