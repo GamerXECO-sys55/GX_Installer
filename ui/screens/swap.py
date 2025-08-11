@@ -113,9 +113,10 @@ class SwapScreen(BaseInstallerScreen):
         
         yield Footer()
     
-    async def on_mount(self) -> None:
-        """Initialize the swap configuration when screen mounts"""
-        await self.load_system_info()
+    def on_mount(self) -> None:
+        """Load system information on mount"""
+        super().on_mount()
+        self.call_after_refresh(self.load_system_info)
         self.restore_previous_selection()
         self.update_swap_info()
     

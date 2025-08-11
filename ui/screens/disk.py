@@ -51,10 +51,10 @@ class DiskSelectionScreen(BaseInstallerScreen):
                     yield Button("Refresh", variant="default", id="refresh-btn")
                     yield Button("Continue", variant="primary", id="continue-btn", disabled=True)
     
-    async def on_mount(self) -> None:
+    def on_mount(self) -> None:
         """Initialize disk table on mount"""
         super().on_mount()
-        await self.refresh_disks()
+        self.call_after_refresh(self.refresh_disks)
     
     async def refresh_disks(self) -> None:
         """Refresh disk list"""

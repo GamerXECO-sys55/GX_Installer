@@ -64,18 +64,31 @@ class BaseInstallerScreen(Screen):
     
     async def handle_back(self):
         """Handle back button - override in subclasses"""
-        self.app.pop_screen()
+        await self.app.pop_screen()
     
     async def handle_next(self):
         """Handle next button - override in subclasses"""
         pass
     
-    def show_error(self, message: str):
+    async def show_error(self, message: str):
         """Show error message"""
         self.logger.error(message)
-        # Could add notification widget here
+        await self.app.show_message(message, "error")
     
-    def show_success(self, message: str):
+    async def show_success(self, message: str):
         """Show success message"""
         self.logger.info(message)
-        # Could add notification widget here
+        await self.app.show_message(message, "success")
+    
+    async def show_warning(self, message: str):
+        """Show warning message"""
+        self.logger.warning(message)
+        await self.app.show_message(message, "warning")
+    
+    async def go_back(self):
+        """Go back to previous screen"""
+        await self.app.go_back()
+    
+    async def navigate_to(self, screen_name: str):
+        """Navigate to specific screen"""
+        await self.app.navigate_to_screen(screen_name)

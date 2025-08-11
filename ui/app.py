@@ -248,6 +248,26 @@ Active Screens: {len(self.screen_stack)}
         logger.info(f"{title}: {message}")
         self.notify(message, title=title, severity="information", timeout=5)
     
+    async def show_message(self, message: str, message_type: str = "info") -> None:
+        """Show message with different types"""
+        severity_map = {
+            "info": "information",
+            "success": "information", 
+            "warning": "warning",
+            "error": "error"
+        }
+        severity = severity_map.get(message_type, "information")
+        logger.info(f"Message ({message_type}): {message}")
+        self.notify(message, severity=severity, timeout=5)
+    
+    async def show_confirmation(self, message: str, title: str = "Confirm") -> bool:
+        """Show confirmation dialog - simplified version"""
+        logger.info(f"Confirmation requested: {title} - {message}")
+        # For now, just show a notification and return True
+        # In a real implementation, this would show a modal dialog
+        self.notify(f"{title}: {message}", severity="warning", timeout=10)
+        return True
+    
     async def show_warning(self, message: str, title: str = "Warning") -> None:
         """Show warning message"""
         logger.warning(f"{title}: {message}")
